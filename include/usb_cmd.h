@@ -130,10 +130,13 @@ typedef struct{
 #define CMD_SIMULATE_TAG_ISO_14443a                                       0x0384
 #define CMD_READER_ISO_14443a                                             0x0385
 #define CMD_SIMULATE_TAG_LEGIC_RF                                         0x0387
+
 #define CMD_READER_LEGIC_RF                                               0x0388
 #define CMD_WRITER_LEGIC_RF                                               0x0389
-#define CMD_EPA_PACE_COLLECT_NONCE                                        0x038A
-#define CMD_EPA_PACE_REPLAY                                               0x038B
+#define CMD_RAW_WRITER_LEGIC_RF                                           0x038A
+
+#define CMD_EPA_PACE_COLLECT_NONCE                                        0x038B
+#define CMD_EPA_PACE_REPLAY                                               0x038C
 
 #define CMD_ICLASS_READCHECK                                              0x038F
 #define CMD_ICLASS_CLONE                                                  0x0390

@@ -16,7 +16,7 @@
 #include "legicrf.h"
 #include "legic_prng.h"
 #include "crc.h"
-
+		
 static struct legic_frame {
 	int bits;
 	uint32_t data;
@@ -372,11 +372,12 @@ int legic_read_byte(int byte_index, int cmd_sz) {
  *  * forward the prng based on the timing
  */
 int legic_write_byte(int byte, int addr, int addr_sz) {
-    //do not write UID, CRC, DCF
-    if(addr <= 0x06) { 
-		return 0;
-	}
-
+    //do not write UID, CRC
+	if(addr <= 0x04) { 
+		//do not return 0 (OK) if it was not OK at all
+			return -2;
+		}
+    uint32_t cmd, cmd_sz;
 	//== send write command ==============================
 	crc_clear(&legic_crc);
 	crc_update(&legic_crc, 0, 1); /* CMD_WRITE */
@@ -384,12 +385,14 @@ int legic_write_byte(int byte, int addr, int addr_sz) {
 	crc_update(&legic_crc, byte, 8);
 
 	uint32_t crc = crc_finish(&legic_crc);
-	uint32_t cmd = ((crc     <<(addr_sz+1+8)) //CRC
+	
+		cmd = ((crc     <<(addr_sz+1+8)) //CRC
                    |(byte    <<(addr_sz+1))   //Data
                    |(addr    <<1)             //Address
                    |(0x00    <<0));           //CMD = W
-    uint32_t cmd_sz = addr_sz+1+8+4;          //crc+data+cmd
+    	cmd_sz = addr_sz+1+8+4;          //crc+data+cmd
 
+    //Dbprintf("frame_snd_rwd cmd: %02x cmd_sz: %02x (crc: %02x)", cmd, cmd_sz, crc);
     legic_prng_forward(2); /* we wait anyways */
     while(timer->TC_CV < 387) ; /* ~ 258us */
 	frame_send_rwd(cmd, cmd_sz);
@@ -421,7 +424,7 @@ int legic_write_byte(int byte, int addr, int addr_sz) {
     while(timer->TC_CV > 1) ; /* Wait till the clock has reset */
 	return -1;
 }
-
+	
 int LegicRfReader(int offset, int bytes) {
 	int byte_index=0, cmd_sz=0, card_sz=0;
 
@@ -496,7 +499,7 @@ void LegicRfWriter(int bytes, int offset) {
 				return;
 			}
 			addr_sz = 8;
-			Dbprintf("MIM 256 card found, writing 0x%02.2x - 0x%02.2x ...", offset, offset+bytes);
+			Dbprintf("MIM 256 card found, writing 0x%02.2x - 0x%02.2x ...", offset, bytes);
 			break;
 		case 0x3d:
 			if(offset+bytes > 0x400) {
@@ -517,12 +520,64 @@ void LegicRfWriter(int bytes, int offset) {
 	while(byte_index < bytes) {
 		int r = legic_write_byte(BigBuf[byte_index+offset], byte_index+offset, addr_sz);
 		if((r != 0) || BUTTON_PRESS()) {
-			Dbprintf("operation aborted @ 0x%03.3x", byte_index);
+			Dbprintf("operation aborted @ 0x%03.3x (%d)", byte_index, r);
 			switch_off_tag_rwd();
 			LED_B_OFF();
 			LED_C_OFF();
 			return;
 		}
+        WDT_HIT();
+		byte_index++;
+        if(byte_index & 0x10) LED_C_ON(); else LED_C_OFF();
+	}
+    LED_B_OFF();
+    LED_C_OFF();
+    DbpString("write successful");
+}
+
+void LegicRfRawWriter(int offset, int byte) {
+	int byte_index=0, addr_sz=0;
+	
+	LegicCommonInit();
+	
+	DbpString("setting up legic card");
+	uint32_t tag_type = perform_setup_phase_rwd(SESSION_IV);
+	switch_off_tag_rwd();
+	switch(tag_type) {
+		case 0x1d:
+			if(offset > 0x100) {
+				Dbprintf("Error: can not write to 0x%03.3x on MIM 256", offset);
+				return;
+			}
+			addr_sz = 8;
+			Dbprintf("MIM 256 card found, writing at addr 0x%02.2x - value 0x%02.2x ...", offset, byte);
+			break;
+		case 0x3d:
+			if(offset > 0x400) {
+          		Dbprintf("Error: can not write to 0x%03.3x on MIM 1024", offset);
+           		return;
+          	}
+			addr_sz = 10;
+			Dbprintf("MIM 1024 card found, writing at addr 0x%03.3x - value 0x%03.3x ...", offset, byte);
+			break;
+		default:
+			Dbprintf("No or unknown card found, aborting");
+            return;
+	}
+	Dbprintf("integer value: %d offset: %d  addr_sz: %d", byte, offset, addr_sz);
+    LED_B_ON();
+	perform_setup_phase_rwd(SESSION_IV);
+    legic_prng_forward(2);
+		
+	int r = legic_write_byte(byte, offset, addr_sz);
+		
+	if((r != 0) || BUTTON_PRESS()) {
+		Dbprintf("operation aborted @ 0x%03.3x (%1d)", byte_index, r);
+		switch_off_tag_rwd();
+		LED_B_OFF();
+		LED_C_OFF();
+		return;
+			
         WDT_HIT();
 		byte_index++;
         if(byte_index & 0x10) LED_C_ON(); else LED_C_OFF();
