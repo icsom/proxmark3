@@ -21,14 +21,15 @@ static int CmdHelp(const char *Cmd);
 
 static command_t CommandTable[] = 
 {
-  {"help",        CmdHelp,        1, "This help"},
-  {"decode",      CmdLegicDecode, 0, "Display deobfuscated and decoded LEGIC RF tag data (use after hf legic reader)"},
-  {"reader",      CmdLegicRFRead, 0, "[offset [length]] -- read bytes from a LEGIC card"},
-  {"save",        CmdLegicSave,   0, "<filename> [<length>] -- Store samples"},
-  {"load",        CmdLegicLoad,   0, "<filename> -- Restore samples"},
-  {"sim",         CmdLegicRfSim,  0, "[phase drift [frame drift [req/resp drift]]] Start tag simulator (use after load or read)"},
-  {"write",       CmdLegicRfWrite,0, "<offset> <length> -- Write sample buffer (user after load or read)"},
-  {"fill",        CmdLegicRfFill, 0, "<offset> <length> <value> -- Fill/Write tag with constant value"},
+  {"help",        CmdHelp,         		1, "This help"},
+  {"decode",      CmdLegicDecode,  		0, "Display deobfuscated and decoded LEGIC RF tag data (use after hf legic reader)"},
+  {"reader",      CmdLegicRFRead,  		0, "[offset [length]] -- read bytes from a LEGIC card"},
+  {"save",        CmdLegicSave,    		0, "<filename> [<length>] -- Store samples"},
+  {"load",        CmdLegicLoad,    		0, "<filename> -- Restore samples"},
+  {"sim",         CmdLegicRfSim,   		0, "[phase drift [frame drift [req/resp drift]]] Start tag simulator (use after load or read)"},
+  {"write",       CmdLegicRfWrite, 		0, "<offset> <length> -- Write sample buffer (user after load or read)"},
+  {"writeRaw",    CmdLegicRfRawWrite,	0, "<address> <value> -- Write direct to address"},
+  {"fill",        CmdLegicRfFill,  		0, "<offset> <length> <value> -- Fill/Write tag with constant value"},
   {NULL, NULL, 0, NULL}
 };
 
@@ -338,6 +339,34 @@ int CmdLegicRfWrite(const char *Cmd)
     }
     SendCommand(&c);
     return 0;
+}
+
+int CmdLegicRfRawWrite(const char *Cmd)
+{
+	char answer;
+    UsbCommand c={CMD_RAW_WRITER_LEGIC_RF};
+    int res = sscanf(Cmd, " 0x%"llx" 0x%"llx, &c.arg[0], &c.arg[1]);
+	if(res != 2) {
+		PrintAndLog("Please specify the offset and value as two hex strings");
+        return -1;
+    }
+	
+	if (c.arg[0] == 0x05 || c.arg[0] == 0x06) {
+		PrintAndLog("############# DANGER !! #############");
+		PrintAndLog("# changing the DCF is irreversible  #");
+    	PrintAndLog("#####################################");
+		sleep(1);
+		PrintAndLog("do youe really want to continue? y(es) n(o)");		
+		scanf(" %c", &answer);
+		if (answer == 'y' || answer == 'Y') {
+		 SendCommand(&c);
+		 return 0;
+	 	}
+		else return -1;
+	}
+	
+    SendCommand(&c);
+	return 0;
 }
 
 int CmdLegicRfFill(const char *Cmd)

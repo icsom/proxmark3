@@ -1,6 +1,12 @@
 # .gitignore
 # don't push these files to the repository
 
+
+client/legic_dumps/
+client/pm3.sh
+client/scripts/legic_buffer2card.lua
+client/shell_scripts/
+
 .history
 *.log
 *.eml

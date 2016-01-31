@@ -14,5 +14,6 @@
 extern void LegicRfSimulate(int phase, int frame, int reqresp);
 extern int  LegicRfReader(int bytes, int offset);
 extern void LegicRfWriter(int bytes, int offset);
+extern void LegicRfRawWriter(int offset, int bytes);
 
 #endif /* __LEGICRF_H */
