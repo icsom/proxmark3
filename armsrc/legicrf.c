@@ -528,7 +528,7 @@ void LegicRfWriter(int bytes, int offset) {
 		if((r != 0) || BUTTON_PRESS()) {
 			if ( (offset != 0x05) || BUTTON_PRESS() ) Dbprintf("operation aborted at byte %d of %d  (exitcode: %d)", (byte_index+1), bytes, r);
 			else   {
-				Dbprintf("attpemt to write DCF failed at addr: 0x%02.2x - try again until it works or BUTTON gets pressed ;-)", (0x06-byte_index));	
+				Dbprintf("attempt to write DCF failed at addr: 0x%02.2x - try again until it works or BUTTON gets pressed ;-)", (0x06-byte_index));	
 				switch_off_tag_rwd();
 				LegicRfWriter(bytes, offset);				
 			}			
