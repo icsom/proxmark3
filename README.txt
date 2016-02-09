@@ -3,11 +3,11 @@ WARNING:
 This Fork highly is Experimental!!
 
    * added possibility to write direct to a Legic Prime Tag (MIM256/1024)
-      without using values from the 'BigBuffer' -> 'hf legic writeRaw <addr> <value>' (both in Hex)
+     without using values from the 'BigBuffer' -> 'hf legic writeRaw <addr> <value>'
    * added possibility to decrease DCF values at address 0x05 & 0x06 on a Legic Prime Tag
-      DCF-value will be pulled from the BigBuffer (address 0x05 & 0x06) so you have to 
-      load the data into the BigBuffer before with 'hf legic load <path/to/legic.dump>' & then
-      write the DCF-Values (both at once) with 'hf legic write 0x05 0x02' 
+     DCF-value will be pulled from the BigBuffer (address 0x05 & 0x06) so you have to 
+     load the data into the BigBuffer before with 'hf legic load <path/to/legic.dump>' & then
+     write the DCF-Values (both at once) with 'hf legic write 0x05 0x02' 
 
 NOTICE:
 (2014-03-26)
