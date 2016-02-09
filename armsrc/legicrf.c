@@ -411,7 +411,7 @@ int legic_write_byte(int byte, int addr, int addr_sz) {
 			}
             old_level = level;
         }
-        if(edges > 20 && edges < 60) { /* expected are 42 edges */
+        if(edges > 10 && edges < 60) { /* expected are 42 edges */
 			int t = timer->TC_CV;
 			int c = t/TAG_TIME_BIT;
 			timer->TC_CCR = AT91C_TC_SWTRG;
@@ -513,14 +513,20 @@ void LegicRfWriter(int bytes, int offset) {
 			Dbprintf("No or unknown card found, aborting");
             return;
 	}
-
+	int r;
     LED_B_ON();
 	perform_setup_phase_rwd(SESSION_IV);
     legic_prng_forward(2);
 	while(byte_index < bytes) {
-		int r = legic_write_byte(BigBuf[byte_index+offset], byte_index+offset, addr_sz);
+		if ( offset == 0x05 ) {
+			// write DCF in reverse order
+			r = legic_write_byte(BigBuf[(0x06-byte_index)], (0x06-byte_index), addr_sz);
+		}
+		else {
+			r = legic_write_byte(BigBuf[byte_index+offset], byte_index+offset, addr_sz);
+		}		
 		if((r != 0) || BUTTON_PRESS()) {
-			Dbprintf("operation aborted @ 0x%03.3x (%d)", byte_index, r);
+			Dbprintf("operation aborted at byte %d of %d  (exitcode: %d)", (byte_index+1), bytes, r);
 			switch_off_tag_rwd();
 			LED_B_OFF();
 			LED_C_OFF();
