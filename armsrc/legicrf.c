@@ -411,7 +411,7 @@ int legic_write_byte(int byte, int addr, int addr_sz) {
 			}
             old_level = level;
         }
-        if(edges > 10 && edges < 60) { /* expected are 42 edges */
+        if(edges > 20 && edges < 60) { /* expected are 42 edges */
 			int t = timer->TC_CV;
 			int c = t/TAG_TIME_BIT;
 			timer->TC_CCR = AT91C_TC_SWTRG;
@@ -519,7 +519,7 @@ void LegicRfWriter(int bytes, int offset) {
     legic_prng_forward(2);
 	while(byte_index < bytes) {
 		if ( offset == 0x05 ) {
-			// write DCF in reverse order
+			// write DCF in reverse order (addr 0x06 before 0x05 - but both subsecuently)
 			r = legic_write_byte(BigBuf[(0x06-byte_index)], (0x06-byte_index), addr_sz);
 		}
 		else {
