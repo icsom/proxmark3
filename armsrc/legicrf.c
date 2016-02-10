@@ -488,8 +488,11 @@ void LegicRfWriter(int bytes, int offset) {
 	uint8_t *BigBuf = BigBuf_get_addr();
 
 	LegicCommonInit();
-	if ((offset != 0x05) && (bytes != 0x02))
+	
+	//we won't get spamed with messages during a possible loop'
+	if ((offset != 0x05) && (bytes != 0x02)) 
 		DbpString("setting up legic card");
+	
 	uint32_t tag_type = perform_setup_phase_rwd(SESSION_IV);
 	switch_off_tag_rwd();
 	switch(tag_type) {
@@ -498,7 +501,7 @@ void LegicRfWriter(int bytes, int offset) {
 				Dbprintf("Error: can not write to 0x%03.3x on MIM 256", offset+bytes);
 				return;
 			}
-			addr_sz = 8;
+			addr_sz = 8;	
 			if ((offset != 0x05) && (bytes != 0x02))
 				Dbprintf("MIM 256 card found, writing 0x%02.2x - 0x%02.2x ...", offset, bytes);
 			break;
@@ -520,18 +523,17 @@ void LegicRfWriter(int bytes, int offset) {
 	perform_setup_phase_rwd(SESSION_IV);
     legic_prng_forward(2);
 	while(byte_index < bytes) {
-		//should the DCF be changed?
+		//doublecheck: if the DCF should be changed
 		if ( (offset == 0x05) && (bytes == 0x02) ) {
-			// write DCF in reverse order (addr 0x06 before 0x05 - but both subsecuently)
+			//write DCF in reverse order (addr 0x06 before 0x05)
 			r = legic_write_byte(BigBuf[(0x06-byte_index)], (0x06-byte_index), addr_sz);
 		}
 		else {
 			r = legic_write_byte(BigBuf[byte_index+offset], byte_index+offset, addr_sz);
 		}		
-		if((r != 0) || BUTTON_PRESS()) {
-			//ensure again - that DCF should be write ö it failed, so we try again until it succeeded or BUTTON gets pressed			
+		if ( (r != 0) || BUTTON_PRESS() ) {
+			//ensure again - that DCF should be write but failed, so we try again until it succeeded or BUTTON gets pressed			
 			if ( (offset == 0x05) && (bytes == 0x02) )  {
-				//Dbprintf("attempt to write DCF failed at addr: 0x%02.2x - try again until it works or BUTTON gets pressed ;-)", (0x06-byte_index));	
 				switch_off_tag_rwd();
 				LED_B_OFF();
 				LED_C_OFF();
