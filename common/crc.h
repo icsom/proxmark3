@@ -39,6 +39,11 @@ extern uint32_t crc_finish(crc_t *crc);
 
 // Calculate CRC-8/Maxim checksum
 uint32_t CRC8Maxim(uint8_t *buff, size_t size  );
+
+// Calculate CRC-8/Legic checksum
+uint32_t CRC8Legic(uint8_t *buff, size_t size);
+uint32_t SwapBitsLegic(uint32_t value, int nrbits);
+
 /* Static initialization of a crc structure */
 #define CRC_INITIALIZER(_order, _polynom, _initial_value, _final_xor) { \
 	.state = ((_initial_value) & ((1L<<(_order))-1)), \

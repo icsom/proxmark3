@@ -21,15 +21,16 @@ static int CmdHelp(const char *Cmd);
 
 static command_t CommandTable[] = 
 {
-  {"help",        CmdHelp,         		1, "This help"},
-  {"decode",      CmdLegicDecode,  		0, "Display deobfuscated and decoded LEGIC RF tag data (use after hf legic reader)"},
-  {"reader",      CmdLegicRFRead,  		0, "[offset [length]] -- read bytes from a LEGIC card"},
-  {"save",        CmdLegicSave,    		0, "<filename> [<length>] -- Store samples"},
-  {"load",        CmdLegicLoad,    		0, "<filename> -- Restore samples"},
-  {"sim",         CmdLegicRfSim,   		0, "[phase drift [frame drift [req/resp drift]]] Start tag simulator (use after load or read)"},
-  {"write",       CmdLegicRfWrite, 		0, "<offset> <length> -- Write sample buffer (user after load or read)"},
-  {"writeRaw",    CmdLegicRfRawWrite,	0, "<address> <value> -- Write direct to address"},
-  {"fill",        CmdLegicRfFill,  		0, "<offset> <length> <value> -- Fill/Write tag with constant value"},
+  {"help",    CmdHelp,         			1, "This help"},
+  {"decode",  CmdLegicDecode,  			0, "Display deobfuscated and decoded LEGIC RF tag data (use after hf legic reader)"},
+  {"reader",  CmdLegicRFRead,  			0, "[offset [length]] -- read bytes from a LEGIC card"},
+  {"save",    CmdLegicSave,    			0, "<filename> [<length>] -- Store samples"},
+  {"load",    CmdLegicLoad,    			0, "<filename> -- Restore samples"},
+  {"sim",     CmdLegicRfSim,   			0, "[phase drift [frame drift [req/resp drift]]] Start tag simulator (use after load or read)"},
+  {"write",   CmdLegicRfWrite, 			0, "<offset> <length> -- Write sample buffer (user after load or read)"},
+  {"writeRaw",CmdLegicRfRawWrite,		0, "<address> <value> -- Write direct to address"},
+  {"fill",    CmdLegicRfFill,  			0, "<offset> <length> <value> -- Fill/Write tag with constant value"},
+  {"segcrc",  CmdLegicCalcSegmentCRC,	0, "<segbyte 1> <segbyte 2> <segbyte 3> <segbye 4> as hex value"},
   {NULL, NULL, 0, NULL}
 };
 
@@ -392,3 +393,14 @@ int CmdLegicRfFill(const char *Cmd)
     return 0;
  }
 
+int CmdLegicCalcSegmentCRC(const char *Cmd) {
+	 uint8_t bytes[4];
+     int res = sscanf(Cmd, "0x%02hhX 0x%02hhX 0x%02hhX 0x%02hhX", &bytes[0], &bytes[1], &bytes[2], &bytes[3]);
+     if(res != 4) {
+         PrintAndLog("Please specify the Segmentheader as 4 hex strings (res=%i - bytes=%i)",res, sizeof(bytes));
+         return -1;
+     }
+	 uint32_t CRC = CRC8Legic(bytes, res);
+	 PrintAndLog("CRC: 0x%02.x", CRC);
+	 return 0;
+ }

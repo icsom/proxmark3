@@ -1918,11 +1918,16 @@ int CmdHexsamples(const char *Cmd)
 	int i, j;
 	int requested = 0;
 	int offset = 0;
+	
+	/* legic data can be xord (plain) and re-xord (for cloning) */
+	int crc = 0x00;
+	int newcrc = 0x00;
+	
 	char string_buf[25];
 	char* string_ptr = string_buf;
 	uint8_t got[BIGBUF_SIZE];
 
-	sscanf(Cmd, "%i %i", &requested, &offset);
+	sscanf(Cmd, "%i %i %x %x", &requested, &offset, &crc, &newcrc);
 
 	/* if no args send something */
 	if (requested == 0) {
@@ -1932,14 +1937,33 @@ int CmdHexsamples(const char *Cmd)
 		PrintAndLog("Tried to read past end of buffer, <bytes> + <offset> > %d", BIGBUF_SIZE);
 		return 0;
 	}
-
+	
+	/* 	dirty hack for legic-dumps 
+		to add the possibility to get
+		everything starting at addr 0x16 (int 22)
+		plain / deobfuscated - or reofuscated with 
+		newcrc for a clone
+	*/
+	if ( crc != 0x00 )
+		PrintAndLog("buffer content starting at addr 0x16 get xord with a value of 0x%02.x", crc);
+	if ( newcrc != 0x00 )
+		PrintAndLog("and re-xord with a value of 0x%02.x", crc);
+	
 	GetFromBigBuf(got,requested,offset);
 	WaitForResponse(CMD_ACK,NULL);
 
 	i = 0;
 	for (j = 0; j < requested; j++) {
 		i++;
-		string_ptr += sprintf(string_ptr, "%02x ", got[j]);
+		if ( crc == 0x00 )
+			string_ptr += sprintf(string_ptr, "%02x ", got[j]);
+		else {
+			if ( (j + offset) >= 22 )
+				string_ptr += sprintf(string_ptr, "%02x ", ((got[j]^crc)^newcrc));
+			else
+				string_ptr += sprintf(string_ptr, "%02x ", got[j]);
+		}
+	
 		if (i == 8) {
 			*(string_ptr - 1) = '\0';    // remove the trailing space
 			PrintAndLog("%s", string_buf);
