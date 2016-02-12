@@ -32,6 +32,26 @@ void crc_update(crc_t *crc, uint32_t data, int data_width)
 	}
 }
 
+/* thx to iceman */
+uint32_t CRC8Legic(uint8_t *buff, size_t size) {
+	// Poly 0x63,   reversed poly 0xC6,  Init 0x55,  Final 0x00
+	crc_t crc;
+	crc_init(&crc, 8, 0xC6, 0x55, 0);
+	crc_clear(&crc);
+	
+	for ( int i = 0; i < size; ++i)
+		crc_update(&crc, buff[i], 8);
+	return SwapBitsLegic(crc_finish(&crc), 8);
+}
+
+uint32_t SwapBitsLegic(uint32_t value, int nrbits) {
+	uint32_t newvalue = 0;
+	for(int i = 0; i < nrbits; i++) {
+		newvalue ^= ((value >> i) & 1) << (nrbits - 1 - i);
+	}
+	return newvalue;
+}
+
 void crc_clear(crc_t *crc)
 {
 	crc->state = crc->initial_value & crc->mask;

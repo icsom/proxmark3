@@ -832,4 +832,3 @@ void LegicRfSimulate(int phase, int frame, int reqresp)
    LED_A_OFF();
    LED_C_OFF();
 }
-
