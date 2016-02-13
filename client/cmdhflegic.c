@@ -136,6 +136,9 @@ int CmdLegicDecode(const char *Cmd)
   PrintAndLog("\nADF: User Area");
   
   i = 22;  
+  uint8_t crcCheck[8];
+  uint32_t segCRC;
+  char crcValidate[6];
   for (n=0; n<64; n++) {
     segment_len = ((data_buf[i+1]^crc)&0x0f) * 256 + (data_buf[i]^crc);
     segment_flag = ((data_buf[i+1]^crc)&0xf0)>>4;
@@ -143,7 +146,21 @@ int CmdLegicDecode(const char *Cmd)
     wrp = (data_buf[i+2]^crc);
     wrc = ((data_buf[i+3]^crc)&0x70)>>4;
     
-     PrintAndLog("Segment %02u: raw header=%02x %02x %02x %02x, flag=%01x (valid=%01u, last=%01u), len=%04u, WRP=%02u, WRC=%02u, RD=%01u, CRC=%02x",
+	/* validate segment-crc */
+	crcCheck[0]=data_buf[0]; //uid0
+    crcCheck[1]=data_buf[1]; //uid1
+    crcCheck[2]=data_buf[2]; //uid2
+    crcCheck[3]=data_buf[3]; //uid3
+    crcCheck[4]=(data_buf[i]^crc); //hdr0
+    crcCheck[5]=(data_buf[i+1]^crc); //hdr1
+    crcCheck[6]=(data_buf[i+2]^crc); //hdr2
+    crcCheck[7]=(data_buf[i+3]^crc); //hdr3
+	segCRC = CRC8Legic(crcCheck, 8);
+
+	if ( (data_buf[i+4]^crc) == segCRC ) strcpy(crcValidate, "valid");
+	else strcpy(crcValidate, "error");
+	
+    PrintAndLog("Segment %02u: raw header=%02x %02x %02x %02x, flag=%01x (valid=%01u, last=%01u), len=%04u, WRP=%02u, WRC=%02u, RD=%01u, CRC=%02x (%s)",
       n,
       data_buf[i]^crc,
       data_buf[i+1]^crc,
@@ -156,7 +173,9 @@ int CmdLegicDecode(const char *Cmd)
       wrp,
       wrc,
       ((data_buf[i+3]^crc)&0x80)>>7,
-      (data_buf[i+4]^crc)
+      (data_buf[i+4]^crc),
+	  crcValidate,
+	  segCRC
     );
     
     i+=5;
@@ -392,7 +411,11 @@ int CmdLegicRfFill(const char *Cmd)
     SendCommand(&cmd);
     return 0;
  }
- 
+
+ /* 
+ 	segment-crc on a credential seems get calculated over uid & segment-header
+ 	only then a legec-reader is validating it
+ */
 int CmdLegicCalcCRC8(const char *Cmd) {
 	char *data = Cmd;
 	int offset;
