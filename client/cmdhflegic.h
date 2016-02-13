@@ -21,5 +21,5 @@ int CmdLegicRfSim(const char *Cmd);
 int CmdLegicRfWrite(const char *Cmd);
 int CmdLegicRfRawWrite(const char *Cmd);
 int CmdLegicRfFill(const char *Cmd);
-int CmdLegicCalcSegmentCRC(const char *Cmd);
+int CmdLegicCalcCRC8(const char *Cmd);
 #endif
