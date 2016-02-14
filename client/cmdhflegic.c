@@ -375,7 +375,7 @@ int CmdLegicRfRawWrite(const char *Cmd)
 		PrintAndLog("############# DANGER !! #############");
 		PrintAndLog("# changing the DCF is irreversible  #");
     	PrintAndLog("#####################################");
-		sleep(1);
+		//sleep(1);
 		PrintAndLog("do youe really want to continue? y(es) n(o)");		
 		scanf(" %c", &answer);
 		if (answer == 'y' || answer == 'Y') {
