@@ -375,7 +375,7 @@ int legic_write_byte(int byte, int addr, int addr_sz) {
     //do not write UID, CRC
 	if(addr <= 0x04) { 
 		//do not return 0 (OK) if it was not OK at all
-			return -2;
+			return 0;
 		}
     uint32_t cmd, cmd_sz;
 	//== send write command ==============================
@@ -489,9 +489,7 @@ void LegicRfWriter(int bytes, int offset) {
 
 	LegicCommonInit();
 	
-	//we won't get spamed with messages during a possible loop'
-	if ((offset != 0x05) && (bytes != 0x02)) 
-		DbpString("setting up legic card");
+	DbpString("setting up legic card");
 	
 	uint32_t tag_type = perform_setup_phase_rwd(SESSION_IV);
 	switch_off_tag_rwd();
@@ -519,41 +517,35 @@ void LegicRfWriter(int bytes, int offset) {
             return;
 	}
 	int r;
-    LED_B_ON();
+  LED_B_ON();
 	perform_setup_phase_rwd(SESSION_IV);
-    legic_prng_forward(2);
+	legic_prng_forward(2);
+	
 	while(byte_index < bytes) {
-		//doublecheck: if the DCF should be changed
+		//check if the DCF should be changed
 		if ( (offset == 0x05) && (bytes == 0x02) ) {
 			//write DCF in reverse order (addr 0x06 before 0x05)
 			r = legic_write_byte(BigBuf[(0x06-byte_index)], (0x06-byte_index), addr_sz);
+			legic_prng_forward(1);
 		}
 		else {
 			r = legic_write_byte(BigBuf[byte_index+offset], byte_index+offset, addr_sz);
 		}		
 		if ( (r != 0) || BUTTON_PRESS() ) {
-			//ensure again - that DCF should be write but failed, so we try again until it succeeded or BUTTON gets pressed			
-			if ( (offset == 0x05) && (bytes == 0x02) )  {
-				switch_off_tag_rwd();
-				LED_B_OFF();
-				LED_C_OFF();
-				LegicRfWriter(bytes, offset);				
-			}
-			else {			
-				Dbprintf("operation aborted at byte %d of %d  (exitcode: %d)", (byte_index+1), bytes, r);
-				switch_off_tag_rwd();
-				LED_B_OFF();
-				LED_C_OFF();
-				return;
-			}
+			Dbprintf("operation aborted at byte %d of %d  (exitcode: %d)", (byte_index+1), bytes, r);
+			switch_off_tag_rwd();
+			LED_B_OFF();
+			LED_C_OFF();
+			return;
 		}
-        WDT_HIT();
+    WDT_HIT();
 		byte_index++;
-        if(byte_index & 0x10) LED_C_ON(); else LED_C_OFF();
+    if(byte_index & 0x10) LED_C_ON(); else LED_C_OFF();
 	}
-    LED_B_OFF();
-    LED_C_OFF();
-    DbpString("write successful");
+	
+  LED_B_OFF();
+  LED_C_OFF();
+  DbpString("write successful");
 }
 
 void LegicRfRawWriter(int offset, int byte) {
