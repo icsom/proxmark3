@@ -30,7 +30,7 @@ static command_t CommandTable[] =
   {"write",   CmdLegicRfWrite, 		0, "<offset> <length> -- Write sample buffer (user after load or read)"},
   {"writeRaw",CmdLegicRfRawWrite,	0, "<address> <value> -- Write direct to address"},
   {"fill",    CmdLegicRfFill,  		0, "<offset> <length> <value> -- Fill/Write tag with constant value"},
-  {"crc8",    CmdLegicCalcCRC8,		0, "calulates the StorageCRC over hex-values (at least 4 hex-values required)"},
+  {"crc8",    CmdLegicCalcCrc8,		0, "calulates the StorageCRC over hex-values (at least 4 hex-values required)"},
   {NULL, NULL, 0, NULL}
 };
 
@@ -411,30 +411,32 @@ int CmdLegicRfFill(const char *Cmd)
     return 0;
  }
 
- /* 
- 	segment-crc on a credential seems get calculated over uid & segment-header
- 	only then a legec-reader is validating it
- */
-int CmdLegicCalcCRC8(const char *Cmd) {
-	char *data = Cmd;
-	int offset;
-	uint8_t n;
-	uint8_t bytes[128];
-	int i=0;
-	
-	while (sscanf(data, " 0x%02hhX%n", &n, &offset) == 1)
-	{
-	    data += offset;
-			 bytes[i]=n;
-			 i++;		 
-	}
-	
-	if ( i < 4 ) {
-	    PrintAndLog("Please specify at least 4 hex strings (inBytes/maxBytes = %i/%i)",i, (sizeof(bytes)-1));
-	    return -1;
-	}
-	
-	uint32_t CRC = CRC8Legic(bytes, i);
-	PrintAndLog("CRC: 0x%02.x", CRC);
+int usage_legic_calccrc8(void){
+	PrintAndLog("Calculates the legic crc8 on the input hexbytes.");
+	PrintAndLog("There must be an even number of hexsymbols as input.");
+	PrintAndLog("Usage:  hf legic crc8 <hexbytes>");
+	PrintAndLog("Options :");
+	PrintAndLog("  <hexbytes>   : hex bytes in a string");
+	PrintAndLog("");
+	PrintAndLog("Sample  : hf legic crc8 deadbeef1122");
 	return 0;
 }
+/* 
+	segment-crc on a credential seems get calculated over uid & segment-header
+	only then a legec-reader is validating it
+*/
+int CmdLegicCalcCrc8(const char *Cmd){
+
+	int len =  strlen(Cmd);	
+	if (len & 1 ) return usage_legic_calccrc8(); 
+
+	uint8_t *data = malloc(len);
+	if ( data == NULL ) return 1;
+	
+	param_gethex(Cmd, 0, data, len );
+
+	uint32_t checksum =  CRC8Legic(data, len/2);	
+	PrintAndLog("Bytes: %s || CRC8: %X", sprint_hex(data, len/2), checksum );
+	free(data);
+	return 0;
+} 
