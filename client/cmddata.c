@@ -919,19 +919,21 @@ int CmdDetectClockRate(const char *Cmd)
 
 char *GetFSKType(uint8_t fchigh, uint8_t fclow, uint8_t invert)
 {
-	char *fskType;
+	static char fType[8];
+	memset(fType, 0x00, 8);
+	char *fskType = fType;
 	if (fchigh==10 && fclow==8){
 		if (invert) //fsk2a
-			fskType = "FSK2a";
+			memcpy(fskType, "FSK2a", 5);
 		else //fsk2
-			fskType = "FSK2";
+			memcpy(fskType, "FSK2", 4);
 	} else if (fchigh == 8 && fclow == 5) {
 		if (invert)
-			fskType = "FSK1";
+			memcpy(fskType, "FSK1", 4);
 		else
-			fskType = "FSK1a";
+			memcpy(fskType, "FSK1a", 5);
 	} else {
-		fskType = "FSK??";
+		memcpy(fskType, "FSK??", 5);
 	}
 	return fskType;
 }
@@ -944,24 +946,22 @@ int FSKrawDemod(const char *Cmd, bool verbose)
 {
 	//raw fsk demod  no manchester decoding no start bit finding just get binary from wave
 	uint8_t rfLen, invert, fchigh, fclow;
-
 	//set defaults
 	//set options from parameters entered with the command
-	rfLen = param_get8ex(Cmd, 0, 0, 10);
-	invert = param_get8ex(Cmd, 1, 0, 10);
-	fchigh = param_get8ex(Cmd, 2, 0, 10);
-	fclow = param_get8ex(Cmd, 3, 0, 10);
-
+	rfLen = param_get8(Cmd, 0);
+	invert = param_get8(Cmd, 1);
+	fchigh = param_get8(Cmd, 2);
+	fclow = param_get8(Cmd, 3);
 	if (strlen(Cmd)>0 && strlen(Cmd)<=2) {
-		 if (rfLen==1){
+		if (rfLen==1) {
 			invert = 1;   //if invert option only is used
 			rfLen = 0;
-		 }
+		}
 	}
-
 	uint8_t BitStream[MAX_GRAPH_TRACE_LEN]={0};
 	size_t BitLen = getFromGraphBuf(BitStream);
 	if (BitLen==0) return 0;
+	if (g_debugMode==2) PrintAndLog("DEBUG: Got samples");	
 	//get field clock lengths
 	uint16_t fcs=0;
 	if (!fchigh || !fclow) {
@@ -975,21 +975,20 @@ int FSKrawDemod(const char *Cmd, bool verbose)
 		}
 	}
 	//get bit clock length
-	if (!rfLen){
+	if (!rfLen) {
 		rfLen = detectFSKClk(BitStream, BitLen, fchigh, fclow);
 		if (!rfLen) rfLen = 50;
 	}
 	int size = fskdemod(BitStream, BitLen, rfLen, invert, fchigh, fclow);
-	if (size > 0){
+	if (size > 0) {
 		setDemodBuf(BitStream,size,0);
 
 		// Now output the bitstream to the scrollback by line of 16 bits
 		if (verbose || g_debugMode) {
-			PrintAndLog("\nUsing Clock:%u, invert:%u, fchigh:%u, fclow:%u", rfLen, invert, fchigh, fclow);
+			PrintAndLog("\nUsing Clock:%u, invert:%u, fchigh:%u, fclow:%u", (unsigned int)rfLen, (unsigned int)invert, (unsigned int)fchigh, (unsigned int)fclow);
 			PrintAndLog("%s decoded bitstream:",GetFSKType(fchigh,fclow,invert));
 			printDemodBuff();
 		}
-
 		return 1;
 	} else {
 		if (g_debugMode) PrintAndLog("no FSK data found");
