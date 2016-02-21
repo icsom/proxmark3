@@ -1,14 +1,60 @@
 --[[
 	script to create a clone-dump with new crc
   Author: mosci
-  https://github.com/icsom/proxmark3/blob/master/client/scripts/Legic_clone.lua
+   my Fork: https://github.com/icsom/proxmark3.git
+	Upstream: https://github.com/Proxmark/proxmark3.git
 
 	1. read tag-dump, xor byte 22..end with byte 0x05 of the inputfile
 	2. write to outfile 
 	3. set byte 0x05 to newcrc
 	4. until byte 0x21 plain like in inputfile
 	5. from 0x22..end xored with newcrc
-	TODO 6. calculate new crc on each segment (needs to know the new MCD & MSN0..2)
+	6. calculate new crc on each segment (needs to know the new MCD & MSN0..2)
+	
+	simplest usage:
+	read a valid legic tag with 'hf legic reader'
+	save the dump with 'hf legic save orig.hex'
+  place your 'empty' tag on the reader and run 'script run Legic_clone -i orig.hex -w'
+  you will see some output like:
+		read 1024 bytes from legic_dumps/j_0000.hex
+		
+		place your empty tag onto the PM3 to read and display the MCD & MSN0..2
+		the values will be shown below
+		 confirm whnen ready [y/n] ?y
+		#db# setting up legic card
+		#db# MIM 256 card found, reading card ...
+		#db# Card read, use 'hf legic decode' or
+		#db# 'data hexsamples 8' to view results
+		0b ad c0 de  <- !! here you'll see the MCD & MSN of your empty tag, which has to be typed in manually as seen below !!
+		type in  MCD as 2-digit value - e.g.: 00 (default: 79 )
+		 > 0b
+		type in MSN0 as 2-digit value - e.g.: 01 (default: 28 )
+		 > ad
+		type in MSN1 as 2-digit value - e.g.: 02 (default: d1 )
+		 > c0
+		type in MSN2 as 2-digit value - e.g.: 03 (default: 43 )
+		 > de
+		MCD:0b, MSN:ad c0 de, MCC:79 <- this crc is calculated from the MCD & MSN and must match the one on yout empty tag
+		
+		wrote 1024 bytes to myLegicClone.hex
+		enter number of bytes to write? (default: 86 )
+		
+		loaded 1024 samples
+		#db# setting up legic card
+		#db# MIM 256 card found, writing 0x00 - 0x01 ...
+		#db# write successful
+		...
+		#db# setting up legic card
+		#db# MIM 256 card found, writing 0x56 - 0x01 ...
+		#db# write successful
+		proxmark3>
+	
+	the default value (number of bytes to write) is calculated over all valid segments and should be ok - just hit enter, wait until write has finished
+	and your clone should be ready (except there has to be a additional KGH-CRC to be calculated - which credentials are unknown until yet)
+	
+	the '-w' switch will only work with my fork - it needs the binary legic_crc8 which is not part of the proxmark3-master-branch
+	also the ability to write DCF is not possible with the proxmark3-master-branch
+	but creating dumpfile-clone files will be possible (without valid segment-crc - this has to done manually with) 
 --]]
 
 local bxor=bit32.bxor
@@ -47,6 +93,7 @@ optional arguments :
 	[-c <new-tag crc>] 	(requieres option -o to be given)
 	[-d]			(Display content of found Segments)
 	[-s]			(Display summary at the end)
+	[-w]			(write directly to Tag - a file myLegicClone.hex wille be generated also)
 	e.g.: legic_clone -i my_dump.hex -o my_clone.hex -c f8
 	hint: using the same CRC as in the <input file> will result in a plain dump]]
 	print(htext)
