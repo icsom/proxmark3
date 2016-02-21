@@ -3,7 +3,7 @@
   Author: mosci
   https://github.com/icsom/proxmark3/blob/master/client/scripts/Legic_clone.lua
 
-	1. read tag-dump, xor byte 22..end with byte 0x06 of the inputfile
+	1. read tag-dump, xor byte 22..end with byte 0x05 of the inputfile
 	2. write to outfile 
 	3. set byte 0x05 to newcrc
 	4. until byte 0x21 plain like in inputfile
@@ -14,6 +14,15 @@
 local bxor=bit32.bxor
 local utils = require('utils')
 local getopt = require('getopt')
+local cmds = require('commands')
+
+-- timer for delay
+local clock = os.clock
+function sleep(n)  -- seconds
+   local t0 = clock()
+   while clock() - t0 <= n do
+   end
+end
 
 -- we need always 2 digits
 function prepend_zero(s) 
@@ -177,13 +186,30 @@ function getSegmentData(bytes,start,index)
 	Segment[8]=bytes[start+4]
 	-- segment index
 	Segment[9]=index
+	-- # crc-byte
+	Segment[10] = start+4
   return Segment
+end
+
+function getSegmentCrcBytes(bytes)
+	local start=23
+	local index=0
+	local crcbytes = {}
+	repeat
+		Seg = getSegmentData(bytes,start,index)
+		crcbytes[index]= Seg[10]
+		start = start+Seg[4]
+		index = index+1
+	until (Seg[3] == 1 or tonumber(Seg[9]) == 126 )	
+	crcbytes[index] = start
+	return crcbytes
 end
 
 function displaySegments(bytes)
 	--display segment header(s)
 	start=23
 	index="00"
+	
 	--repeat until last-flag ist set to 1 or segment-index has reached 126
 	repeat
 		wrc=""
@@ -225,6 +251,7 @@ function displaySegments(bytes)
 		
 	until (Seg[3] == 1 or tonumber(Seg[9]) == 126 )
 end
+
 -- print Segment values
 function printSegment(SegmentData)
 	res = "\nSegment "..SegmentData[9]..": "
@@ -238,6 +265,71 @@ function printSegment(SegmentData)
 	print(res)	
 end
 
+function consoleCmd(cmd)
+	local handle = io.popen(cmd)
+	local result = handle:read("*a")
+	handle:close()
+	return string.gsub(result, "\n", "")
+end
+
+function writeToTag(plainBytes)
+	local SegCrcs = {}
+	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm whnen ready")
+	-- gather MCD & MSN from new Tag - tzhis must be enterd manualy
+	cmd="hf legic read 0x00 0x05"
+	core.console(cmd)
+	cmd="data hexsamples 4"
+	core.console(cmd)
+	-- enter MCD & MSN
+	 MCD=utils.input("type in  MCD as 2-digit value - e.g.: 00", plainBytes[1])
+	MSN0=utils.input("type in MSN0 as 2-digit value - e.g.: 01", plainBytes[2])
+	MSN1=utils.input("type in MSN1 as 2-digit value - e.g.: 02", plainBytes[3])
+	MSN2=utils.input("type in MSN2 as 2-digit value - e.g.: 03", plainBytes[4])
+	-- claculate crc8 over MCD & MSN
+	cmd="./legic_crc8 "..MCD..MSN0..MSN1..MSN2
+	MCC=consoleCmd(cmd)
+	print("MCD:"..MCD..", MSN:"..MSN0.." "..MSN1.." "..MSN2..", MCC:"..MCC)		
+	-- claculate new Segment-CRC for each valid segment
+	SegCrcs = getSegmentCrcBytes(plainBytes)
+	for i=0, (#SegCrcs-1) do
+		cmd="LegicCrc8 "..MCD..MSN0..MSN1..MSN2..plainBytes[SegCrcs[i]-4]..plainBytes[SegCrcs[i]-3]..plainBytes[SegCrcs[i]-2]..plainBytes[SegCrcs[i]-1]
+		local SegCrc=consoleCmd(cmd)
+		--bytes[SegCrcs[i]]=xorme("0x"..SegCrc,MCC,SegCrcs[i])
+		plainBytes[SegCrcs[i]]=SegCrc
+	end
+	-- apply MCD & MSN to plain data
+	plainBytes[1]=MCD
+	plainBytes[2]=MSN0
+	plainBytes[3]=MSN1
+	plainBytes[4]=MSN2
+	plainBytes[5]=MCC
+	-- xor plain data
+	bytes=xorBytes(plainBytes, MCC)
+	-- write data to file
+	if (writeOutputBytes(bytes, "myLegicClone.hex")) then
+		WriteBytes=utils.input("enter number of bytes to write?", SegCrcs[#SegCrcs])
+		-- load file into pm3-buffer
+		cmd="hf legic load myLegicClone.hex"
+		core.console(cmd)
+		-- write pm3-buffer to Tag
+		for i=0, WriteBytes do
+			if ( i<5 or i>6) then
+				cmd="hf legic write 0x"..num2hex(i).." 0x01"
+				core.console(cmd)
+			elseif (i == 6) then
+				-- write DCF in reverse order (requires 'mosci-patch')
+				print("hf legic write 0x05 0x02")
+				cmd="hf legic write 0x05 0x02"
+				core.console(cmd)
+			else
+				print("skipping byte 0x05 - will be written next step")
+			end				
+			sleep(0.2)
+		end
+	end
+end
+
+
 -- main function
 function main(args)
 	-- some variables
@@ -247,7 +339,7 @@ function main(args)
 	local segments = {}
 	
 	-- parse arguments for the script
-	for o, a in getopt.getopt(args, 'hdsc:i::o:') do
+	for o, a in getopt.getopt(args, 'hwsdc:i::o:') do
 		-- output file
 		if o == "o" then 
 			outfile = a
@@ -278,10 +370,12 @@ function main(args)
 			newcrc = a
 			ncs=true
 		end
-		--display segments switch
+		-- display segments switch
 		if o == "d" then ds=true; end
-		--display summary switch
+		-- display summary switch
 		if o == "s" then ss=true; end
+		-- write to tag switch
+		if o == "w" then ws=true; end
 		-- help
 		if o == "h" then helptext(); return; end
 	end
@@ -325,7 +419,12 @@ function main(args)
 			print("new crc: ".. (ncs and newcrc or "not given"))
 		end
 	end
-	
+	-- write to tag
+	if (ws and #bytes == 1024) then
+		--if(utils.confirm("write to tag now ...")) then
+				writeToTag(bytes)
+		--end
+	end
 end
 
 
