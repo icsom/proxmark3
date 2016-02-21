@@ -374,7 +374,6 @@ int legic_read_byte(int byte_index, int cmd_sz) {
 int legic_write_byte(int byte, int addr, int addr_sz) {
     //do not write UID, CRC
 	if(addr <= 0x04) { 
-		//do not return 0 (OK) if it was not OK at all
 			return 0;
 		}
     uint32_t cmd, cmd_sz;
