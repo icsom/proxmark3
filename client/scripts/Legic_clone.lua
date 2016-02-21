@@ -4,11 +4,11 @@
   https://github.com/icsom/proxmark3/blob/master/client/scripts/Legic_clone.lua
 
 	1. read tag-dump, xor byte 22..end with byte 0x06 of the inputfile
-	2. write to outfile (byte 0x00..0x03=0x00) 
-	3. byte 0x06=newcrc
-	4. until byte 0x21 plain like inputfile
+	2. write to outfile 
+	3. set byte 0x05 to newcrc
+	4. until byte 0x21 plain like in inputfile
 	5. from 0x22..end xored with newcrc
-	TODO 6. calculate new crc on each segment
+	TODO 6. calculate new crc on each segment (needs to know the new MCD & MSN0..3)
 --]]
 local bxor=bit32.bxor
 local utils = require('utils')
@@ -124,7 +124,7 @@ function main(args)
 	
 	-- check if all parametes are supplied
 	if ( i < 3 ) then 
-		print("\nfailure ... we need all three arguments!")
+		print("\nfailure ... three arguments are requiered!")
 		helptext()
 		return 0
 	end 
@@ -191,7 +191,7 @@ function main(args)
 	
 	-- information
 	res = "\n\ncreated clone_dump from\n\t"..infile.." crc: "..oldcrc.."\ndump_file:"
-	res = res .."\n\t"..outfile.." crc: "..newcrc
+	res = res .."\n\t"..outfile.." crc: "..string.sub(newcrc,-2)
 	res = res .."\n\nyou will need to recalculate each segmentCRC"
 	res = res .."\nafter writing this dump to a tag!"
 	res = res .."\n\na segmentCRC gets calculated over MCD,MSN0..3,Segment-Header0..3"
