@@ -60,7 +60,6 @@
 local bxor=bit32.bxor
 local utils = require('utils')
 local getopt = require('getopt')
-local cmds = require('commands')
 
 -- timer for delay
 local clock = os.clock
@@ -196,6 +195,7 @@ function writeOutputBytes(bytes, outfile)
 	return true
 end
 
+-- xore certain bytes
 function xorBytes(inBytes,crc)
 	local bytes = {}
 	for i=1, #inBytes do
@@ -211,6 +211,7 @@ function xorBytes(inBytes,crc)
 	end
 end
 
+-- get raw segment-data
 function getSegmentData(bytes,start,index)
 	local raw, len, valid, last, wrp, wrc, rd, crc
 	local Segment={}
@@ -238,6 +239,7 @@ function getSegmentData(bytes,start,index)
   return Segment
 end
 
+-- get only the addresses of segemnt-crc's and the length of bytes
 function getSegmentCrcBytes(bytes)
 	local start=23
 	local index=0
@@ -252,6 +254,7 @@ function getSegmentCrcBytes(bytes)
 	return crcbytes
 end
 
+-- print segment-data (hf legic decode like)
 function displaySegments(bytes)
 	--display segment header(s)
 	start=23
@@ -312,6 +315,7 @@ function printSegment(SegmentData)
 	print(res)	
 end
 
+-- excecute os-cmd and receive response
 function consoleCmd(cmd)
 	local handle = io.popen(cmd)
 	local result = handle:read("*a")
@@ -319,6 +323,7 @@ function consoleCmd(cmd)
 	return string.gsub(result, "\n", "")
 end
 
+-- write clone-data to tag
 function writeToTag(plainBytes)
 	local SegCrcs = {}
 	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm whnen ready")
@@ -375,7 +380,6 @@ function writeToTag(plainBytes)
 		end
 	end
 end
-
 
 -- main function
 function main(args)
@@ -474,5 +478,5 @@ function main(args)
 	end
 end
 
-
+-- call main with arguments
 main(args)
