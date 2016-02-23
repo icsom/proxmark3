@@ -75,7 +75,7 @@ optional arguments :
 	-w					- write directly to Tag - a file myLegicClone.hex wille be generated also
 	
 	e.g.: 
-	hint: using the same CRC as in the <input file> will result in a plain dump
+	hint: using the CRC '00' will result in a plain dump ( -c 00 )
 
 Examples : 
 	script run legic_clone -i my_dump.hex -o my_clone.hex -c f8
@@ -85,14 +85,6 @@ Examples :
 local utils = require('utils')
 local getopt = require('getopt')
 local bxor = bit32.bxor
-
--- timer for delay
-local clock = os.clock
-function sleep(n)  -- seconds
-   local t0 = clock()
-   while clock() - t0 <= n do
-   end
-end
 
 -- we need always 2 digits
 function prepend_zero(s) 
@@ -325,12 +317,12 @@ function writeToTag(plainBytes)
 	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm when ready")
 
 	-- gather MCD & MSN from new Tag - this must be enterd manually
-	cmd = 'hf legic read 0x00 0x05'
+	cmd = 'hf legic read 0x00 0x04'
 	core.console(cmd)
-
+	print("\nthese are the MCD MSN0 MSN1 MSN2 from the Tag that has being read:")
 	cmd = 'data hexsamples 4'
 	core.console(cmd)
-
+  print("^^ use this values as input for the following answers (one 2-digit-value per question/answer):")
 	-- enter MCD & MSN (in hex)
 	MCD  = utils.input("type in  MCD as 2-digit value - e.g.: 00", plainBytes[1])
 	MSN0 = utils.input("type in MSN0 as 2-digit value - e.g.: 01", plainBytes[2])
@@ -372,16 +364,14 @@ function writeToTag(plainBytes)
 			if ( i<5 or i>6) then
 				cmd = ('hf legic write 0x%02x 0x01'):format(i)
 				core.console(cmd)
-				--core.console(cmd)
 			elseif (i == 6) then
 				-- write DCF in reverse order (requires 'mosci-patch')
 				cmd = 'hf legic write 0x05 0x02'
 				core.console(cmd)
-				--core.console(cmd)
 			else
 				print("skipping byte 0x05 - will be written next step")
 			end				
-			sleep(0.2)
+			utils.Sleep(0.2)
 		end
 	end
 end
@@ -461,6 +451,7 @@ function main(args)
 				res = res .."\n\na segmentCRC gets calculated over MCD,MSN0..3,Segment-Header0..3"
 				res = res .."\ne.g. (based on Segment00 of the data from "..infile.."):"
 				res = res .."\nhf legic crc8 "..bytes[1]..bytes[2]..bytes[3]..bytes[4]..bytes[23]..bytes[24]..bytes[25]..bytes[26]
+				-- this can not be calculated without knowing the new MCD, MSN0..2
 				print(res)
 			end
 		end
@@ -474,9 +465,7 @@ function main(args)
 	end
 	-- write to tag
 	if (ws and #bytes == 1024) then
-		--if(utils.confirm("write to tag now ...")) then
 			writeToTag(bytes)
-		--end
 	end
 end
 

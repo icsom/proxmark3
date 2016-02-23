@@ -294,6 +294,14 @@ local Utils =
 		return n
 	end,
 	
+	-- a simple implementation of a sleep command. Thanks to Mosci
+	-- takes number of seconds to sleep
+	Sleep = function(n)
+		local clock = os.clock
+		local t0 = clock()
+		while clock() - t0 <= n do end
+		return nil	
+	end,
 	-- function convertStringToBytes(str)
 	-- local bytes = {}
 	-- local strLength = string.len(str)
