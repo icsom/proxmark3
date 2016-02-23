@@ -57,31 +57,6 @@
 	but creating dumpfile-clone files will be possible (without valid segment-crc - this has to done manually with) 
 
 
-									(example)	Legic-Prime Layout with 'Kaba Group Header'
-													+----+----+----+----+----+----+----+----+
-										0x00	|MCD |MSN0|MSN1|MSN2|MCC | 60 | ea | 9f |		
-													+----+----+----+----+----+----+----+----+
-										0x08	| ff | 00 | 00 | 00 | 11 |Bck0|Bck1|Bck2|
-													+----+----+----+----+----+----+----+----+
-										0x10	|Bck3|Bck4|Bck5|BCC | 00 | 00 |Seg0|Seg1|
-													+----+----+----+----+----+----+----+----+
-										0x18	|Seg2|Seg3|SegC|Stp0|Stp1|Stp2|Stp3|UID0|
-													+----+----+----+----+----+----+----+----+
-										0x20	|UID1|UID2|kghC|
-													+----+----+----+
-					
-				MCD=	ManufacturerID						(1 Byte)
-		MSN0..2=	ManufactureSerialNumber		(3 Byte)
-				MCC=	CRC												(1 Byte) calculated over MCD,MSN0..2
-				DCF=	DecrementalField					(2 Byte) 'credential' (enduser-Tag) seems to have always DCF-low=0x60 DCF-high=0xea
-		Bck0..5=	Backup										(6 Byte) Bck0 'dirty-flag', Bck1..5 SegmentHeader-Backup 
-				BCC=	BackupCRC									(1 Byte) CRC calculated over Bck1..5
-		Seg0..3=	SegmentHeader 						(on MIM 4 Byte )
-			 SegC=	SegmentCRC								(1 Byte) calculated over MCD,MSN0..2,Seg0..3
-		Stp0..n=	Stamp0...									(variable length) length = Segment-Len - UserData - 1
-		UID0..n=	UserDater									(variable length - with KGH hex 0x00-0x63 / dec 0-99) length = Segment-Len - WRP - WRC - 1 
-		 	 kghC=	KabaGroupHeader						(1 Byte + addr 0x0c must be 0x11)
-	as seen on ths example: addr 0x05..0x08 & 0x0c must have been set to this values - otherwise kghCRC will not be created by a official reader (not accepted)
 --]]
 
 example = "Script create a clone-dump of a dump from a Legic Prime Tag"
