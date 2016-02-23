@@ -130,9 +130,10 @@ function file_check(file_name)
   return file_found
 end
 
--- xor-wrapper
+--- xor-wrapper
+-- xor all from addr 0x22 (start counting from 1 => 23)
 function xorme(hex, xor, index)
-	if ( index >= 23 and index < 50) then
+	if ( index >= 23 ) then
 		return ('%02x'):format(bxor( tonumber(hex,16) , tonumber(xor,16) ))
 	else
 		return hex
@@ -455,13 +456,12 @@ function main(args)
 				res = res .."\ncreated clone_dump from\n\t"..infile.." crc: "..oldcrc.."\ndump_file:"
 				res = res .."\n\t"..outfile.." crc: "..string.sub(newcrc,-2)
 				res = res .."\nyou may load the new file with: hf legic load "..outfile
-				res = res .."\n\nyou will need to recalculate each segmentCRC"
+				res = res .."\n\nif you don't write to tag immediately ('-w' switch) you will need to recalculate each segmentCRC"
 				res = res .."\nafter writing this dump to a tag!"
 				res = res .."\n\na segmentCRC gets calculated over MCD,MSN0..3,Segment-Header0..3"
 				res = res .."\ne.g. (based on Segment00 of the data from "..infile.."):"
 				res = res .."\nhf legic crc8 "..bytes[1]..bytes[2]..bytes[3]..bytes[4]..bytes[23]..bytes[24]..bytes[25]..bytes[26]
 				print(res)
-				-- you can calc it here already...
 			end
 		end
 	else
