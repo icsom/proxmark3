@@ -8,21 +8,8 @@
 // Some lua scripting glue to proxmark core.
 //-----------------------------------------------------------------------------
 
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
-#include "proxmark3.h"
-#include "usb_cmd.h"
-#include "cmdmain.h"
 #include "scripting.h"
-#include "util.h"
-#include "nonce2key/nonce2key.h"
-#include "../common/iso15693tools.h"
-#include "iso14443crc.h"
-#include "../common/crc16.h"
-#include "../common/crc64.h"
-#include "../common/sha1.h"
-#include "aes.h"
+
 /**
  * The following params expected:
  *  UsbCommand c
@@ -368,6 +355,16 @@ static int l_aes128encrypt_ecb(lua_State *L)
 	return 1;// return 1 to signal one return value
 }
 
+static int l_crc8legic(lua_State *L)
+{
+	size_t size;
+	const char *p_str = luaL_checklstring(L, 1, &size);
+
+	uint16_t retval = CRC8Legic( (uint8_t*) p_str, size);
+    lua_pushinteger(L, (int) retval);
+    return 1;
+}
+
 static int l_crc16(lua_State *L)
 {
 	size_t size;
@@ -453,6 +450,7 @@ int set_pm3_libraries(lua_State *L)
 		{"aes128_decrypt_ecb",          l_aes128decrypt_ecb},
 		{"aes128_encrypt",              l_aes128encrypt_cbc},
 		{"aes128_encrypt_ecb",          l_aes128encrypt_ecb},
+		{"crc8legic",										l_crc8legic},
 		{"crc16",                       l_crc16},
 		{"crc64",                       l_crc64},
 		{"sha1",                        l_sha1},

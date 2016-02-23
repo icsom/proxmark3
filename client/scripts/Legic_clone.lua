@@ -57,9 +57,34 @@
 	but creating dumpfile-clone files will be possible (without valid segment-crc - this has to done manually with) 
 --]]
 
-local bxor=bit32.bxor
+example = "Script create a clone-dump of a dump from a Legic Prime Tag"
+author = "Mosci"
+desc =
+[[
+This is a script which create a clone-dump of a dump from a Legic Prime Tag (MIM256 or MIM1024)
+(created with 'hf legic save my_dump.hex') 
+requiered arguments:
+	-i <input file>		(file to read data from)
+	
+optional arguments :
+	-h                  - Help text
+	-o <output file> 	- requieres option -c to be given
+	-c <new-tag crc> 	- requieres option -o to be given
+	-d					- Display content of found Segments
+	-s					- Display summary at the end
+	-w					- write directly to Tag - a file myLegicClone.hex wille be generated also
+	
+	e.g.: 
+	hint: using the same CRC as in the <input file> will result in a plain dump
+
+Examples : 
+	script run legic_clone -i my_dump.hex -o my_clone.hex -c f8
+	script run legic_clone -i my_dump.hex -d -s
+]]
+
 local utils = require('utils')
 local getopt = require('getopt')
+local bxor = bit32.bxor
 
 -- timer for delay
 local clock = os.clock
@@ -79,48 +104,18 @@ function prepend_zero(s)
 	end
 end
 
--- helptext
-function helptext()
-	htext = [[
-
-create a clone-dump of a dump from a Legic Prime Tag (MIM256 or MIM1024)
-(created with 'hf legic save my_dump.hex') 
-requiered arguments:
-	-i <input file>		(file to read data from)
-optional arguments :
-	[-o <output file>] 	(requieres option -c to be given)
-	[-c <new-tag crc>] 	(requieres option -o to be given)
-	[-d]			(Display content of found Segments)
-	[-s]			(Display summary at the end)
-	[-w]			(write directly to Tag - a file myLegicClone.hex wille be generated also)
-	e.g.: legic_clone -i my_dump.hex -o my_clone.hex -c f8
-	hint: using the same CRC as in the <input file> will result in a plain dump]]
-	print(htext)
+--- 
+-- This is only meant to be used when errors occur
+function oops(err)
+	print("ERROR: ",err)
+	return nil, err
 end
-
---- Returns HEX representation of str
-function str2hex(str)
-    local hex = ''
-    while #str > 0 do
-        local hb = num2hex(string.byte(str, 1, 1))
-        if #hb < 2 then hb = '0' .. hb end
-        hex = hex .. hb
-        str = string.sub(str, 2)
-    end
-    return hex
-end
-
---- Returns HEX representation of num
-function num2hex(num)
-    local hexstr = '0123456789abcdef'
-    local s = ''
-    while num > 0 do
-        local mod = math.fmod(num, 16)
-        s = string.sub(hexstr, mod+1, mod+1) .. s
-        num = math.floor(num / 16)
-    end
-    if s == '' then s = '0' end
-    return s
+--- 
+-- Usage help
+function help()
+	print(desc)
+	print("Example usage")
+	print(example)
 end
 
 -- Check availability of file
@@ -136,13 +131,11 @@ function file_check(file_name)
 end
 
 -- xor-wrapper
-function xorme(h,c,i)
-	if(i>=23) then
-		if(string.len(h)==2) then h="0x"..h; end
-		if(string.len(c)==2) then c="0x"..c; end
-		return prepend_zero(num2hex(bxor(h,c)))
+function xorme(hex, xor, index)
+	if ( index >= 23 and index < 50) then
+		return ('%02x'):format(bxor( tonumber(hex,16) , tonumber(xor,16) ))
 	else
-		return h
+		return hex
 	end
 end
 
@@ -157,7 +150,7 @@ function getInputBytes(infile)
 	while true do
 		line = fhi:read()
 		if line == nil then break end
-		-- print (line)
+
 		for byte in line:gmatch("%w+") do 
 			table.insert(bytes, byte)
 		end
@@ -175,6 +168,7 @@ function writeOutputBytes(bytes, outfile)
 	local bcnt=0
 	local fho,err = io.open(outfile,"w")
 	if err then print("OOps ... faild to open output-file ".. outfile); return false; end
+
 	for i = 1, #bytes do
 		if (bcnt == 0) then 
 			line=bytes[i]
@@ -196,14 +190,14 @@ function writeOutputBytes(bytes, outfile)
 end
 
 -- xore certain bytes
-function xorBytes(inBytes,crc)
+function xorBytes(inBytes, crc)
 	local bytes = {}
-	for i=1, #inBytes do
-		bytes[i]=xorme(inBytes[i],crc,i)
+	for index = 1, #inBytes do
+		bytes[index] = xorme(inBytes[index], crc, index)
 	end
 	if (#inBytes == #bytes) then
 		-- replace crc
-		bytes[5]=string.sub(crc,-2)
+		bytes[5] = string.sub(crc,-2)
 		return bytes
 	else
 		print("error: byte-count missmatch")
@@ -212,31 +206,40 @@ function xorBytes(inBytes,crc)
 end
 
 -- get raw segment-data
-function getSegmentData(bytes,start,index)
+function getSegmentData(bytes, start, index)
 	local raw, len, valid, last, wrp, wrc, rd, crc
-	local Segment={}
-	Segment[0] = bytes[start].." "..bytes[start+1].." "..bytes[start+2].." "..bytes[start+3]
+	local segment = {}
+	segment[0] = bytes[start].." "..bytes[start+1].." "..bytes[start+2].." "..bytes[start+3]
 	-- flag = high nibble of byte 1
-	Segment[1] = string.sub(bytes[start+1],0,1)
+	segment[1] = string.sub(bytes[start+1],0,1)
+
 	-- valid = bit 6 of byte 1
-	Segment[2]=tonumber(bit32.extract("0x"..bytes[start+1],6,1),16)
+	segment[2] = tonumber(bit32.extract("0x"..bytes[start+1],6,1),16)
+
 	-- last = bit 7 of byte 1
-	Segment[3]=tonumber(bit32.extract("0x"..bytes[start+1],7,1),16)
+	segment[3] = tonumber(bit32.extract("0x"..bytes[start+1],7,1),16)
+
 	-- len = (byte 0)+(bit0-3 of byte 1)
-	Segment[4]=tonumber(bytes[start],16)+tonumber(bit32.extract("0x"..bytes[start+1],0,3),16)
+	segment[4] = tonumber(bytes[start],16) + tonumber(bit32.extract("0x"..bytes[start+1],0,3),16)
+
 	-- wrp (write proteted) = byte 2
-	Segment[5]=tonumber(bytes[start+2])
+	segment[5] = tonumber(bytes[start+2])
+
 	-- wrc (write control) - bit 4-6 of byte 3
-	Segment[6]=tonumber(bit32.extract("0x"..bytes[start+3],4,3),16)
+	segment[6] = tonumber(bit32.extract("0x"..bytes[start+3],4,3),16)
+
 	-- rd (read disabled) - bit 7 of byte 3
-	Segment[7]=tonumber(bit32.extract("0x"..bytes[start+3],7,1),16)
+	segment[7] = tonumber(bit32.extract("0x"..bytes[start+3],7,1),16)
+
 	-- crc byte 4
-	Segment[8]=bytes[start+4]
+	segment[8] = bytes[start+4]
+
 	-- segment index
-	Segment[9]=index
+	segment[9] = index
+
 	-- # crc-byte
-	Segment[10] = start+4
-  return Segment
+	segment[10] = start+4
+  return segment
 end
 
 -- get only the addresses of segemnt-crc's and the length of bytes
@@ -245,11 +248,11 @@ function getSegmentCrcBytes(bytes)
 	local index=0
 	local crcbytes = {}
 	repeat
-		Seg = getSegmentData(bytes,start,index)
-		crcbytes[index]= Seg[10]
-		start = start+Seg[4]
-		index = index+1
-	until (Seg[3] == 1 or tonumber(Seg[9]) == 126 )	
+		seg = getSegmentData(bytes,start,index)
+		crcbytes[index]= seg[10]
+		start = start + seg[4]
+		index = index + 1
+	until (seg[3] == 1 or tonumber(seg[9]) == 126 )	
 	crcbytes[index] = start
 	return crcbytes
 end
@@ -315,64 +318,65 @@ function printSegment(SegmentData)
 	print(res)	
 end
 
--- excecute os-cmd and receive response
-function consoleCmd(cmd)
-	local handle = io.popen(cmd)
-	local result = handle:read("*a")
-	handle:close()
-	return string.gsub(result, "\n", "")
-end
-
 -- write clone-data to tag
 function writeToTag(plainBytes)
 	local SegCrcs = {}
-	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm whnen ready")
-	-- gather MCD & MSN from new Tag - tzhis must be enterd manualy
-	cmd="hf legic read 0x00 0x05"
+	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm when ready")
+
+	-- gather MCD & MSN from new Tag - this must be enterd manually
+	cmd = 'hf legic read 0x00 0x05'
 	core.console(cmd)
-	cmd="data hexsamples 4"
+
+	cmd = 'data hexsamples 4'
 	core.console(cmd)
-	-- enter MCD & MSN
-	 MCD=utils.input("type in  MCD as 2-digit value - e.g.: 00", plainBytes[1])
-	MSN0=utils.input("type in MSN0 as 2-digit value - e.g.: 01", plainBytes[2])
-	MSN1=utils.input("type in MSN1 as 2-digit value - e.g.: 02", plainBytes[3])
-	MSN2=utils.input("type in MSN2 as 2-digit value - e.g.: 03", plainBytes[4])
-	-- claculate crc8 over MCD & MSN
-	cmd="./legic_crc8 "..MCD..MSN0..MSN1..MSN2
-	MCC=consoleCmd(cmd)
-	print("MCD:"..MCD..", MSN:"..MSN0.." "..MSN1.." "..MSN2..", MCC:"..MCC)		
-	-- claculate new Segment-CRC for each valid segment
+
+	-- enter MCD & MSN (in hex)
+	MCD  = utils.input("type in  MCD as 2-digit value - e.g.: 00", plainBytes[1])
+	MSN0 = utils.input("type in MSN0 as 2-digit value - e.g.: 01", plainBytes[2])
+	MSN1 = utils.input("type in MSN1 as 2-digit value - e.g.: 02", plainBytes[3])
+	MSN2 = utils.input("type in MSN2 as 2-digit value - e.g.: 03", plainBytes[4])
+
+	-- calculate crc8 over MCD & MSN
+	cmd = MCD..MSN0..MSN1..MSN2
+	MCC = ("%02x"):format(utils.Crc8Legic(cmd))
+	print("MCD:"..MCD..", MSN:"..MSN0.." "..MSN1.." "..MSN2..", MCC:"..MCC)
+
+	-- calculate new Segment-CRC for each valid segment
 	SegCrcs = getSegmentCrcBytes(plainBytes)
 	for i=0, (#SegCrcs-1) do
-		cmd="LegicCrc8 "..MCD..MSN0..MSN1..MSN2..plainBytes[SegCrcs[i]-4]..plainBytes[SegCrcs[i]-3]..plainBytes[SegCrcs[i]-2]..plainBytes[SegCrcs[i]-1]
-		local SegCrc=consoleCmd(cmd)
-		--bytes[SegCrcs[i]]=xorme("0x"..SegCrc,MCC,SegCrcs[i])
-		plainBytes[SegCrcs[i]]=SegCrc
+		cmd = MCD..MSN0..MSN1..MSN2..plainBytes[SegCrcs[i]-4]..plainBytes[SegCrcs[i]-3]..plainBytes[SegCrcs[i]-2]..plainBytes[SegCrcs[i]-1]
+		plainBytes[SegCrcs[i]] = ("%02x"):format(utils.Crc8Legic(cmd))
 	end
+	
 	-- apply MCD & MSN to plain data
-	plainBytes[1]=MCD
-	plainBytes[2]=MSN0
-	plainBytes[3]=MSN1
-	plainBytes[4]=MSN2
-	plainBytes[5]=MCC
+	plainBytes[1] = MCD
+	plainBytes[2] = MSN0
+	plainBytes[3] = MSN1
+	plainBytes[4] = MSN2
+	plainBytes[5] = MCC
+	
 	-- xor plain data
-	bytes=xorBytes(plainBytes, MCC)
+	bytes = xorBytes(plainBytes, MCC)
+	
 	-- write data to file
 	if (writeOutputBytes(bytes, "myLegicClone.hex")) then
-		WriteBytes=utils.input("enter number of bytes to write?", SegCrcs[#SegCrcs])
+		WriteBytes = utils.input("enter number of bytes to write?", SegCrcs[#SegCrcs])
+
 		-- load file into pm3-buffer
-		cmd="hf legic load myLegicClone.hex"
+		cmd = 'hf legic load myLegicClone.hex'
 		core.console(cmd)
+		
 		-- write pm3-buffer to Tag
 		for i=0, WriteBytes do
 			if ( i<5 or i>6) then
-				cmd="hf legic write 0x"..num2hex(i).." 0x01"
-				core.console(cmd)
+				cmd = ('hf legic write 0x%02x 0x01'):format(i)
+				print(cmd)
+				--core.console(cmd)
 			elseif (i == 6) then
 				-- write DCF in reverse order (requires 'mosci-patch')
-				print("hf legic write 0x05 0x02")
-				cmd="hf legic write 0x05 0x02"
-				core.console(cmd)
+				cmd = 'hf legic write 0x05 0x02'
+				print(cmd)
+				--core.console(cmd)
 			else
 				print("skipping byte 0x05 - will be written next step")
 			end				
@@ -394,57 +398,54 @@ function main(args)
 		-- output file
 		if o == "o" then 
 			outfile = a
-			ofs=true
+			ofs = true
 			if (file_check(a)) then
 				local answer = utils.confirm("\nthe output-file "..a.." alredy exists!\nthis will delete the previous content!\ncontinue?")
-				if (answer==false) then 
-					return
-				end
+				if (answer==false) then return oops("quiting") end
 			end
 		end		
 		-- input file
 		if o == "i" then
 			infile = a 
 			if (file_check(infile)==false) then
-				print("input file: "..infile.." not found")
-				return
+				return oops("input file: "..infile.." not found")
 			else
 				bytes = getInputBytes(infile)
-				oldcrc=bytes[5]
-				ifs=true
-				if (bytes == false) then return; end
+				oldcrc = bytes[5]
+				ifs = true
+				if (bytes == false) then return oops('couldnt get input bytes') end
 			end
-			i=i+1
+			i = i+1
 		end
 		-- new crc
 		if o == "c" then 
 			newcrc = a
-			ncs=true
+			ncs = true
 		end
 		-- display segments switch
-		if o == "d" then ds=true; end
+		if o == "d" then ds = true; end
 		-- display summary switch
-		if o == "s" then ss=true; end
+		if o == "s" then ss = true; end
 		-- write to tag switch
-		if o == "w" then ws=true; end
+		if o == "w" then ws = true; end
 		-- help
-		if o == "h" then helptext(); return; end
+		if o == "h" then return help() end
 	end
 	
-	if (not ifs) then print("option '-i <input file> is required but missing"); return; end
+	if (not ifs) then return oops("option -i <input file> is required but missing") end
 	
 	-- bytes to plain
-	bytes=xorBytes(bytes, oldcrc)
+	bytes = xorBytes(bytes, oldcrc)
 	
 	-- show segments (works only on plain bytes)
 	if (ds) then
 		print("+------------------------------------------- Segments -------------------------------------------+") 
 		displaySegments(bytes); 
 	end
-	
-  if (ofs and ncs) then
+
+	if (ofs and ncs) then
 		-- xor bytes with new crc
-		newBytes=xorBytes(bytes, newcrc)
+		newBytes = xorBytes(bytes, newcrc)
 		-- write output
 		if (writeOutputBytes(newBytes, outfile)) then
 			-- show summary if requested
@@ -460,6 +461,7 @@ function main(args)
 				res = res .."\ne.g. (based on Segment00 of the data from "..infile.."):"
 				res = res .."\nhf legic crc8 "..bytes[1]..bytes[2]..bytes[3]..bytes[4]..bytes[23]..bytes[24]..bytes[25]..bytes[26]
 				print(res)
+				-- you can calc it here already...
 			end
 		end
 	else
@@ -473,7 +475,7 @@ function main(args)
 	-- write to tag
 	if (ws and #bytes == 1024) then
 		--if(utils.confirm("write to tag now ...")) then
-				writeToTag(bytes)
+			writeToTag(bytes)
 		--end
 	end
 end

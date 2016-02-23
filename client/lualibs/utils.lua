@@ -71,6 +71,32 @@ local Utils =
 		return outResults
 	end,
 	
+	----ISO14443-B CRC
+	Crc14b = function(s)
+		if s == nil then return nil end
+		if #s == 0 then return nil end
+		if  type(s) == 'string' then
+			local utils = require('utils')
+			local ascii = utils.ConvertHexToAscii(s)
+			local hashed = core.iso14443b_crc(ascii)
+			return utils.ConvertAsciiToHex(hashed)
+		end
+		return nil		
+	end,
+	
+	------------ CRC-16 ccitt checksums
+	-- Takes a hex string and calculates a crc16
+	Crc8Legic = function(s)
+		if s == nil then return nil end
+		if #s == 0 then return nil end
+		if  type(s) == 'string' then
+			local utils = require('utils')
+			local asc = utils.ConvertHexToAscii(s)
+			local hash = core.crc8legic(asc)
+			return hash
+		end
+		return nil
+	end,
 	
 	------------ CRC-16 ccitt checksums
 	-- Takes a hex string and calculates a crc16

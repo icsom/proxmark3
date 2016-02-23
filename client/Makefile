@@ -117,8 +117,8 @@ CMDOBJS = $(CMDSRCS:%.c=$(OBJDIR)/%.o)
 ZLIBOBJS = $(ZLIBSRCS:%.c=$(OBJDIR)/%.o)
 
 RM = rm -f
-BINS = proxmark3 flasher fpga_compress legic_crc8 #snooper cli
-CLEAN = cli cli.exe flasher flasher.exe proxmark3 proxmark3.exe fpga_compress fpga_compress.exe snooper snooper.exe legic_crc8 legic_crc8.exe $(CMDOBJS) $(OBJDIR)/*.o *.o *.moc.cpp
+BINS = proxmark3 flasher fpga_compress #snooper cli
+CLEAN = cli cli.exe flasher flasher.exe proxmark3 proxmark3.exe fpga_compress fpga_compress.exe snooper snooper.exe $(CMDOBJS) $(OBJDIR)/*.o *.o *.moc.cpp
 
 all: lua_build $(BINS) 
 
