@@ -371,12 +371,12 @@ function writeToTag(plainBytes)
 		for i=0, WriteBytes do
 			if ( i<5 or i>6) then
 				cmd = ('hf legic write 0x%02x 0x01'):format(i)
-				print(cmd)
+				core.console(cmd)
 				--core.console(cmd)
 			elseif (i == 6) then
 				-- write DCF in reverse order (requires 'mosci-patch')
 				cmd = 'hf legic write 0x05 0x02'
-				print(cmd)
+				core.console(cmd)
 				--core.console(cmd)
 			else
 				print("skipping byte 0x05 - will be written next step")
