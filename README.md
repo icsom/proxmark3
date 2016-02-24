@@ -13,6 +13,9 @@ NOTICE:
 (2014-03-26)
 This is now the official Proxmark repository!
 
+## Build Status Travis CI
+[![Build Status](https://travis-ci.org/icsom/proxmark3.svg?branch=master)](https://travis-ci.org/icsom/proxmark3)
+
 INTRODUCTION:
 
 The proxmark3 is a powerful general purpose RFID tool, the size of a deck
