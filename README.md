@@ -9,9 +9,6 @@ This Fork highly is Experimental!!
      load the data into the BigBuffer before with 'hf legic load <path/to/legic.dump>' & then
      write the DCF-Values (both at once) with 'hf legic write 0x05 0x02' 
 
-NOTICE:
-(2014-03-26)
-This is now the official Proxmark repository!
 
 ## Build Status Travis CI
 [![Build Status](https://travis-ci.org/icsom/proxmark3.svg?branch=master)](https://travis-ci.org/icsom/proxmark3)
