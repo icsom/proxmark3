@@ -480,11 +480,12 @@ function dumpTag(tag)
   res ="\nCDF: System Area"
   res= res.."\n"..dumpCDF(tag)
   -- segments (user area)
-  res = res.."\n\nADF: User Area"
-  for i=0, #tag.SEG do
-    res=res.."\n"..dumpSegment(tag, i).."\n"
+  if(istable(tag.SEG[0])) then
+    res = res.."\n\nADF: User Area"
+    for i=0, #tag.SEG do
+      res=res.."\n"..dumpSegment(tag, i).."\n"
+    end
   end
-  
   return res
 end
 
@@ -784,7 +785,7 @@ function addSegment(tag)
     ['data']  = {},
     ['kgh']   = false
   }
-  if (istable(tag.SEG)) then
+  if (istable(tag.SEG[0])) then
     tag.SEG[#tag.SEG].last=0
     table.insert(tag.SEG, segment)
     for i=0, 8 do
@@ -912,10 +913,11 @@ function modifyMode()
               end
             end,
     ["as"] = function(x) 
-              if (istable(inTAG)) then
+              if (istable(inTAG.SEG[0])) then
                 inTAG=addSegment(inTAG)
                 inTAG.SEG[#inTAG.SEG-1]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG-1])
                 inTAG.SEG[#inTAG.SEG]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG]) 
+                else print("unsegmented Tag!")
               end
             end,
     ["rs"] = function(x) 
