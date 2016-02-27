@@ -56,7 +56,32 @@
 	also the ability to write DCF is not possible with the proxmark3-master-branch
 	but creating dumpfile-clone files will be possible (without valid segment-crc - this has to done manually with) 
 
-
+	
+	(example)	Legic-Prime Layout with 'Kaba Group Header'
+			+----+----+----+----+----+----+----+----+
+  0x00|MCD |MSN0|MSN1|MSN2|MCC | 60 | ea | 9f |		
+			+----+----+----+----+----+----+----+----+
+	0x08| ff | 00 | 00 | 00 | 11 |Bck0|Bck1|Bck2|
+			+----+----+----+----+----+----+----+----+
+	0x10|Bck3|Bck4|Bck5|BCC | 00 | 00 |Seg0|Seg1|
+			+----+----+----+----+----+----+----+----+
+	0x18|Seg2|Seg3|SegC|Stp0|Stp1|Stp2|Stp3|UID0|
+			+----+----+----+----+----+----+----+----+
+	0x20|UID1|UID2|kghC|
+			+----+----+----+
+					
+				MCD=	ManufacturerID						(1 Byte)
+		MSN0..2=	ManufactureSerialNumber		(3 Byte)
+				MCC=	CRC												(1 Byte) calculated over MCD,MSN0..2
+				DCF=	DecrementalField					(2 Byte) 'credential' (enduser-Tag) seems to have always DCF-low=0x60 DCF-high=0xea
+		Bck0..5=	Backup										(6 Byte) Bck0 'dirty-flag', Bck1..5 SegmentHeader-Backup 
+				BCC=	BackupCRC									(1 Byte) CRC calculated over Bck1..5
+		Seg0..3=	SegmentHeader 						(on MIM 4 Byte )
+			 SegC=	SegmentCRC								(1 Byte) calculated over MCD,MSN0..2,Seg0..3
+		Stp0..n=	Stamp0...									(variable length) length = Segment-Len - UserData - 1
+		UID0..n=	UserDater									(variable length - with KGH hex 0x00-0x63 / dec 0-99) length = Segment-Len - WRP - WRC - 1 
+		 	 kghC=	KabaGroupHeader						(1 Byte + addr 0x0c must be 0x11)
+	as seen on ths example: addr 0x05..0x08 & 0x0c must have been set to this values - otherwise kghCRC will not be created by a official reader (not accepted)
 --]]
 
 example = "Script create a clone-dump of a dump from a Legic Prime Tag"
@@ -104,6 +129,7 @@ function oops(err)
 	print("ERROR: ",err)
 	return nil, err
 end
+
 --- 
 -- Usage help
 function help()
@@ -115,7 +141,6 @@ end
 -- Check availability of file
 function file_check(file_name)
   local file_found=io.open(file_name, "r")      
-
   if file_found==nil then
     file_found=false
   else
@@ -215,8 +240,8 @@ function getSegmentData(bytes, start, index)
 	segment[3] = tonumber(bit32.extract("0x"..bytes[start+1],7,1),16)
 
 	-- len = (byte 0)+(bit0-3 of byte 1)
-	segment[4] = tonumber(bytes[start],16) + tonumber(bit32.extract("0x"..bytes[start+1],0,3),16)
-
+  segment[4] = tonumber(("%03x"):format(tonumber(bit32.extract("0x"..bytes[start+1],0,3),16)..tonumber(bytes[start],16)),16)
+  
 	-- wrp (write proteted) = byte 2
 	segment[5] = tonumber(bytes[start+2])
 
@@ -235,6 +260,36 @@ function getSegmentData(bytes, start, index)
 	-- # crc-byte
 	segment[10] = start+4
   return segment
+end
+
+--- Kaba Group Header
+-- checks if a segment does have a kghCRC
+-- returns boolean false if no kgh has being detected or the kghCRC if a kgh was detected
+function CheckKgh(bytes, segStart, segEnd)
+  if (bytes[8]=='9f' and bytes[9]=='ff' and bytes[13]=='11') then
+    local i
+    local data = {}
+    segStart=tonumber(segStart,10)
+    segEnd=tonumber(segEnd,10)
+    local dataLen = segEnd-segStart-5
+    --- gather creadentials for verify
+    local WRP = bytes[(segStart+2)]
+    local WRC = ("%02x"):format(tonumber(bit32.extract("0x"..bytes[segStart+3],4,3),16))
+    local RD = ("%02x"):format(tonumber(bit32.extract("0x"..bytes[segStart+3],7,1),16))
+    local XX = "00"  
+    cmd = bytes[1]..bytes[2]..bytes[3]..bytes[4]..WRP..WRC..RD..XX
+    for i=(segStart+5), (segStart+5+dataLen-2) do
+      cmd = cmd..bytes[i]
+    end
+    local KGH=("%02x"):format(utils.Crc8Legic(cmd))
+    if (KGH==bytes[segEnd-1]) then
+      return KGH
+    else
+      return false
+    end
+  else
+    return false
+  end
 end
 
 -- get only the addresses of segemnt-crc's and the length of bytes
@@ -264,8 +319,9 @@ function displaySegments(bytes)
 		wrp=""
 		pld=""
 		Seg = getSegmentData(bytes,start,index)
+    KGH = CheckKgh(bytes,start,(start+tonumber(Seg[4],10)))
 		printSegment(Seg)
-		
+
 		-- wrc
 		if(Seg[6]>0) then
 			print("WRC protected area:")
@@ -293,10 +349,10 @@ function displaySegments(bytes)
 			pld = pld..bytes[(start+4+1+Seg[5]+Seg[6]+i)-1].." " 
 		end
 		print(pld)
-		
+    if (KGH) then print("'Kaba Group Header' detected"); end
 		start = start+Seg[4]
 		index = prepend_zero(tonumber(Seg[9])+1)
-		
+    
 	until (Seg[3] == 1 or tonumber(Seg[9]) == 126 )
 end
 
@@ -305,7 +361,7 @@ function printSegment(SegmentData)
 	res = "\nSegment "..SegmentData[9]..": "
 	res = res..	"raw header="..SegmentData[0]..", "
 	res = res..	"flag="..SegmentData[1].." (valid="..SegmentData[2].." last="..SegmentData[3].."), "
-	res = res..	"len="..SegmentData[4]..", "
+	res = res..	"len="..("%04d"):format(SegmentData[4])..", "
 	res = res..	"WRP="..prepend_zero(SegmentData[5])..", "
 	res = res..	"WRC="..prepend_zero(SegmentData[6])..", "
 	res = res.. "RD="..SegmentData[7]..", "
@@ -316,7 +372,9 @@ end
 -- write clone-data to tag
 function writeToTag(plainBytes)
 	local SegCrcs = {}
-	utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm when ready")
+	if(utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm when ready") == false) then
+    return
+  end
 
 	-- gather MCD & MSN from new Tag - this must be enterd manually
 	cmd = 'hf legic read 0x00 0x04'
@@ -338,11 +396,19 @@ function writeToTag(plainBytes)
 
 	-- calculate new Segment-CRC for each valid segment
 	SegCrcs = getSegmentCrcBytes(plainBytes)
-	for i=0, (#SegCrcs-1) do
+	for i=0, (#SegCrcs-1) do   
+    -- SegCrcs[i]-4 = address of first byte of segmentHeader (low byte segment-length)
+    segLen=tonumber(("%1x"):format(tonumber(bit32.extract("0x"..plainBytes[(SegCrcs[i]-3)],0,3),16))..("%02x"):format(tonumber(plainBytes[SegCrcs[i]-4],16)),16)
+    segStart=(SegCrcs[i]-4)
+    segEnd=(SegCrcs[i]-4+segLen)
+    KGH=CheckKgh(plainBytes,segStart,segEnd)
+    if (KGH) then 
+      print("'Kaba Group Header' detected - re-calculate...")
+    end
 		cmd = MCD..MSN0..MSN1..MSN2..plainBytes[SegCrcs[i]-4]..plainBytes[SegCrcs[i]-3]..plainBytes[SegCrcs[i]-2]..plainBytes[SegCrcs[i]-1]
 		plainBytes[SegCrcs[i]] = ("%02x"):format(utils.Crc8Legic(cmd))
 	end
-	
+
 	-- apply MCD & MSN to plain data
 	plainBytes[1] = MCD
 	plainBytes[2] = MSN0
@@ -350,7 +416,7 @@ function writeToTag(plainBytes)
 	plainBytes[4] = MSN2
 	plainBytes[5] = MCC
 	
-	-- xor plain data
+	-- prepare plainBytes for writing (xor plain data with new MCC)
 	bytes = xorBytes(plainBytes, MCC)
 	
 	-- write data to file
