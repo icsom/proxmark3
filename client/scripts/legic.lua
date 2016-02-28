@@ -807,7 +807,7 @@ function addSegment(tag)
 end
 
 ---
---
+-- delete segment (except segment 00)
 function delSegment(tag, index)
   local i
   if (type(index)=="string") then index=tonumber(index,10) end
@@ -886,7 +886,8 @@ function modifyMode()
                 inTAG=outTAG
             end,
     ["lf"] = function(x)  
-              filename=input("enter filename: ", "legic.temp")
+              if (file_check(x)) then filename=x
+              else  filename=input("enter filename: ", "legic.temp") end
               inTAG=readFile(filename)
             end,
     ["sf"] = function(x)  
@@ -1015,20 +1016,22 @@ function main(args)
       print(dumpTag(inTAG))
     end
     bytes=tagToBytes(inTAG)
-    -- xor with given crc
     if (cfs) then 
+      -- xor willl be done in function writeFile
+      -- with the value of byte[5]
       bytes[5]=crc 
     end
     -- write to outfile
     if (bytes) then 
       writeFile(bytes, outfile)
-      -- reed new content into virtual tag 
-      
+      --- read real tag into virtual tag 
+      -- inTAG=readFromPM3() end
+      --- or simply use the bytes that where wriiten
       inTAG=bytesToTag(bytes, inTAG)
       -- show new content
       if (dfs) then  
         print("-----------------------------------------")
-        print(dumpTag(outTAG)) 
+        print(dumpTag(inTAG)) 
       end
     end
   end
