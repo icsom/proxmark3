@@ -611,8 +611,11 @@ end
 --- CRC calculation and validation
 -- build kghCrc credentials
 function kghCrcCredentials(tag, segid) 
+  local x='00'
+  if (type(segid)=="string") then segid=tonumber(segid,10) end
+  if (segid>0) then x='93' end
   local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2..("%02x"):format(tag.SEG[segid].WRP)
-  cred = cred..("%02x"):format(tag.SEG[segid].WRC)..("%02x"):format(tag.SEG[segid].RD).."00"
+  cred = cred..("%02x"):format(tag.SEG[segid].WRC)..("%02x"):format(tag.SEG[segid].RD)..x
   for i=0, #tag.SEG[segid].data-2 do
     cred = cred..tag.SEG[segid].data[i]
   end
@@ -672,7 +675,7 @@ end
 -- write clone-data to tag
 function writeToTag(plainBytes, taglen, filename)
   local bytes
-	if(utils.confirm("\nplace your empty tag onto the PM3 to read and display the MCD & MSN0..2\nthe values will be shown below\n confirm when ready") == false) then
+	if(utils.confirm("\nplace your empty tag onto the PM3 to read & write\n") == false) then
     return
   end
 	
@@ -823,11 +826,13 @@ function modifyHelp()
   rt => read    Tag     ds => dump   Segments     lf => load File
   wt => write   Tag     as => add    Segment      sf => save File 
   ct => copy io Tag     es => edit   Segment      xf => xor  File
-  di => dump  inTag     ed => edit   Data     
-  do => dump outTag     rs => remove Segment
-                        cc => check  Segment-CRC                  
-  q => quit             ck => check  KGH           h => this Help                                
-  ]]
+  tc => copy oi Tag     ed => edit   Data     
+  di => dump  inTag     rs => remove Segment
+  do => dump outTag     cc => check  Segment-CRC                  
+                        ck => check  KGH                
+                        tk => toggle KGH-Flag
+  q => quit             xc => get    KGH-Str      h => this Help
+  ]]                    
   return t
 end
 
@@ -870,6 +875,10 @@ function modifyMode()
     ["ct"] = function(x)  
                 print("copy virtual input-TAG to output-TAG")
                 outTAG=inTAG
+            end,
+    ["tc"] = function(x)  
+                print("copy virtual output-TAG to input-TAG")
+                inTAG=outTAG
             end,
     ["lf"] = function(x)  
               filename=input("enter filename: ", "legic.temp")
@@ -939,6 +948,19 @@ function modifyMode()
                 sel=selectSegment(inTAG)
                 regenSegmentHeader(inTAG.SEG[sel]) 
               end,
+     ["tk"] = function(x) 
+                sel=selectSegment(inTAG)
+                if(inTAG.SEG[sel].kgh) then inTAG.SEG[sel].kgh=false
+                else inTAG.SEG[sel].kgh=true end
+              end,
+     ["k"] = function(x) 
+               print(("%02x"):format(utils.Crc8Legic(x)))
+              end,
+     ["xc"] = function(x) 
+               --get credential-string for kgh-crc on certain segment
+               --usage: xc <segment-index>
+               print("k "..kghCrcCredentials(inTAG, x))
+              end,
      ["cc"] = function(x)  if (istable(inTAG)) then checkAllSegCrc(inTAG) end end,
      ["ck"] = function(x)  if (istable(inTAG)) then checkAllKghCrc(inTAG) end end,
      ["q"] = function(x)  end,
@@ -948,9 +970,9 @@ function modifyMode()
     ic=input("Legic command? ('h' for help - 'q' for quit)", "h")
     -- command actions
     if (type(actions[string.lower(string.sub(ic,0,1))])=='function') then
-      actions[string.lower(string.sub(ic,0,1))]()
+      actions[string.lower(string.sub(ic,0,1))](string.sub(ic,3))
     elseif (type(actions[string.lower(string.sub(ic,0,2))])=='function') then
-      actions[string.lower(string.sub(ic,0,2))]()
+      actions[string.lower(string.sub(ic,0,2))](string.sub(ic,4))
     else actions['h']('') end
   until (string.sub(ic,0,1)=="q")
 end
