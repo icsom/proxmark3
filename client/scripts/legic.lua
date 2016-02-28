@@ -23,20 +23,23 @@ it's kinda interactive with following commands in three categories:
 
     Data I/O           Segment Manipulation        File I/O   
 ------------------     --------------------      ---------------
- rt => read    Tag     ds => dump   Segments     lf => load File
- wt => write   Tag     as => add    Segment      sf => save File 
- ct => copy io Tag     es => edit   Segment      xf => xor  File
- di => dump  inTag     ed => edit   Data     
- do => dump outTag     rs => remove Segment
-                       cc => check  Segment-CRC                  
- q => quit             ck => check  KGH           h => this Help  
+  rt => read    Tag     ds => dump   Segments     lf => load File
+  wt => write   Tag     as => add    Segment      sf => save File 
+  ct => copy io Tag     es => edit   Segment      xf => xor  File
+  tc => copy oi Tag     ed => edit   Data     
+  di => dump  inTag     rs => remove Segment
+  do => dump outTag     cc => check  Segment-CRC                  
+                        ck => check  KGH                
+                        tk => toggle KGH-Flag
+  q => quit             xc => get    KGH-Str      h => this Help 
  
  Data I/O 
  rt: 'read tag'         - reads a tag placed near to the PM3
  wt: 'write tag'        - writes the content of the 'virtual inTag' to a tag placed near to th PM3
                           without the need of changing anything - MCD,MSN,MCC will be read from the tag
                           before and applied to the output.
- ct: 'copy tag'         - copy the 'virtual Tag'' to a second 'virtual TAG' - not usefull yet, but inernally needed
+ ct: 'copy tag'         - copy the 'virtual Tag' to a second 'virtual TAG' - not usefull yet, but inernally needed
+ tc: 'copy tag'         - copy the 'second virtual Tag' to 'virtual TAG' - not usefull yet, but inernally needed
  di: 'dump inTag'       - shows the current content of the 'virtual Tag'
  do: 'dump outTag'      - shows the current content of the 'virtual outTag'
 
@@ -50,8 +53,10 @@ it's kinda interactive with following commands in three categories:
  rs: 'remove segment'   - removes a Segment (except Segment 00, but this can be set to valid=0 for Master-Token)
  cc: 'check Segment-CRC'- checks & calculates (if check failed) the Segment-CRC of all Segments
  ck: 'check KGH-CRC'    - checks the and calculates a 'Kaba Group Header' if one was detected
-                          'Kaba Group Header CRC calculation' works currently only on Segment 00!
- 
+                          'Kaba Group Header CRC calculation'
+ tk: 'toggle KGH'       - toglle the (script-internal) flag for kgh-calculation for a segment
+ xc: 'etra c'           - show string that was used to calculate the kgh-crc of a segment
+  
  Input/Output
  lf: 'load file'        - load a (xored) file from the local Filesystem into the 'virtual inTag'
  sf: 'save file'        - saves the 'virtual inTag' to the local Filesystem (xored with Tag-MCC)
@@ -821,8 +826,8 @@ end
 function modifyHelp()
   local t=[[
   
- Tag  Manipulation      Segment Manipulation       Input/Output   
- -----------------      --------------------      ---------------
+    Data I/O           Segment Manipulation        File I/O   
+------------------     --------------------      ---------------
   rt => read    Tag     ds => dump   Segments     lf => load File
   wt => write   Tag     as => add    Segment      sf => save File 
   ct => copy io Tag     es => edit   Segment      xf => xor  File
