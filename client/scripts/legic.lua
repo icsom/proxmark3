@@ -21,8 +21,8 @@ desc =
 This script helps you to read, create and modify Legic Prime Tags (MIM22, MIM256, MIM1024)
 it's kinda interactive with following commands in three categories:
 
-    Data I/O           Segment Manipulation        File I/O   
-------------------     --------------------      ---------------
+      Data I/O          Segment Manipulation         File I/O   
+ ------------------     --------------------      ---------------
   rt => read    Tag     ds => dump   Segments     lf => load File
   wt => write   Tag     as => add    Segment      sf => save File 
   ct => copy io Tag     es => edit   Segment      xf => xor  File
@@ -260,8 +260,10 @@ function tagToBytes(tag)
       table.insert(bytes, tag.data[i])
     end
     -- backup data
-    for i=0, #tag.Bck do
-      table.insert(bytes, tag.Bck[i])
+    if(istable(tag.Bck)) then
+      for i=0, #tag.Bck do
+        table.insert(bytes, tag.Bck[i])
+      end
     end
     -- token-create-time / master-token crc
     for i=0, #tag.MTC do
@@ -343,6 +345,16 @@ function bytesToTag(bytes, tag)
     if (tag.Type=="SAM" and #bytes>23) then
       tag=segmentsToTag(bytes, tag)
       print((#tag.SEG+1).." Segment(s) found")
+    -- unsegmented Master-Token
+    -- only tag-data 
+    else 
+      for i=0, #tag.Bck do
+        table.insert(tag.data, tag.Bck[i])
+      end
+      tag.data[#tag.data]=tag.MTC[0]
+      tag.Bck=nil
+      --tag.MTC[0]=tag.MTC[1]
+      --tag.MTC[1]=nil
     end
     print(#bytes.." bytes for Tag processed")
     return tag
@@ -359,9 +371,9 @@ function dumpCDF(tag)
   if (istable(tag)) then
     res = res.."MCD: "..tag.MCD..", MSN: "..tag.MSN0.." "..tag.MSN1.." "..tag.MSN2..", MCC: "..tag.MCC.."\n"
     res = res.."DCF: "..tag.DCFl.." "..tag.DCFh..", Token_Type="..tag.Type.." (OLE="..tag.OLE.."), Stamp_len="..tag.Stamp_len.."\n"
-    res = res.."WRP="..tag.WRP..", WRC="..tag.WRC..", RD="..tag.RD..", raw="..tag.raw..", SSC="..tag.SSC.."\n"
+    res = res.."WRP="..tag.WRP..", WRC="..tag.WRC..", RD="..tag.RD..", raw="..tag.raw..((tag.raw=='9f') and (", SSC="..tag.SSC.."\n") or "\n")
     
-    -- credential
+    -- credential (end-user tag)
     if (tag.raw..tag.SSC=="9fff") then
       res = res.."Remaining Header Area\n"
       for i=0, (#tag.data) do
@@ -376,19 +388,19 @@ function dumpCDF(tag)
         res = res..tag.MTC[i].." "
       end
     
-    -- Master Token
+    -- Master Token specific
     else
-      res = res .."Master-Token Area\n"
-      for i=0, (#tag.data) do
+      res = res .."Master-Token Area\nStamp: "
+      res= res..tag.SSC.." "
+      for i=0, tag.Stamp_len-2 do
         res = res..tag.data[i].." "
       end
-      for i=0, (#tag.Bck) do
-        res = res..tag.Bck[i].." "
+      res=res.."\nunused payload\n"
+      for i=0, (#tag.data-tag.Stamp_len-1) do
+        res = res..tag.data[i].." "
       end
-      for i=0, (#tag.MTC-1) do
-        res = res..tag.MTC[i].." "
-      end
-      res = res .. " MT-CRC: "..tag.MTC[1]
+      res=res.."\nMaster-Token CRC: "
+      res = res ..tag.MTC[1]
     end
     return res
   else print("no valid Tag in dumpCDF") end
@@ -673,11 +685,48 @@ function calcSegmentCrc(tag, segid)
     return ("%02x"):format(utils.Crc8Legic(data))
 end
 
---- create master-token
+--- 
+-- edit token-data
+function editTag(tag)
+  local edit_possible="MCD MSN0 MSN2 MSN2 MCC DCFl DCFh WRP WRC RD raw"
+  if(istable(tag)) then
+    for k,v in pairs(tag) do
+      if(type(v)~="table" and type(v)~="boolean" and string.find(edit_possible,k)) then
+        tag[k]=input("value for: "..k, v)
+      end
+    end
+    -- master-token specific
+    if(istable(tag.Bck)==false) then
+      -- stamp-data length=0-(0xfc-DCFh)-1
+      -- on MT: SSC holds the Starting Stamp Character (Stamp0)
+      tag.SSC=input("Stamp0: ", tag.SSC)
+      for i=0, (tonumber(0xfc ,10)-("%d"):format('0x'..tag.DCFh))-2 do
+      tag.data[i]=input("Stamp".. i+1 ..": ", tag.data[i])
+      end  
+    end
+    bytes=tagToBytes(tag)
+    -- calc new Master-Token crc
+    if(tag.Type~="SAM") then bytes[22]=calcMtCrc(bytes) end
+    tag=bytesToTag(bytes, tag)
+  end
+end
+
+---
+-- calculate Master-Token crc
+function calcMtCrc(bytes) 
+  --print(#bytes)
+  local cmd=bytes[1]..bytes[2]..bytes[3]..bytes[4]..bytes[7]..bytes[6]..bytes[8]
+  local len=(tonumber(0xfc ,10)-("%d"):format('0x'..bytes[7]))
+  for i=1, len do
+    cmd=cmd..bytes[8+i]
+  end
+  local res=("%02x"):format(utils.Crc8Legic(cmd))
+  print("k "..cmd)
+  return res
+end
 
 ---
 -- write virtual Tag to real Tag
--- write clone-data to tag
 function writeToTag(plainBytes, taglen, filename)
   local bytes
 	if(utils.confirm("\nplace your empty tag onto the PM3 to read & write\n") == false) then
@@ -849,12 +898,14 @@ function modifyMode()
      ["h"] = function(x) 
               print(modifyHelp().."\n".."tags im Memory:"..(istable(inTAG) and " inTAG" or "")..(istable(outTAG) and " outTAG" or ""))
             end,
-    ["rt"] = function(x) inTAG=readFromPM3(); actions['di']('') end,
+    ["rt"] = function(x) inTAG=readFromPM3(); actions.di() end,
     ["wt"] = function(x)  
-              if(istable(inTAG)) then
-                local taglen=22
-                for i=0, #inTAG.SEG do
-                  taglen=taglen+inTAG.SEG[i].len+5
+              if(istable(inTAG.SEG)) then 
+                  local taglen=22
+                  if (istable(inTAG.Bck)) then
+                  for i=0, #inTAG.SEG do
+                    taglen=taglen+inTAG.SEG[i].len+5
+                  end
                 end
                 -- read new tag (output tag)
                 outTAG=readFromPM3()
@@ -866,14 +917,18 @@ function modifyMode()
                 inTAG.MSN2 = outbytes[4]
                 inTAG.MCC  = outbytes[5]
                 -- recheck all segments-crc/kghcrc
-                checkAllSegCrc(inTAG)
-                checkAllKghCrc(inTAG)
+                if(istable(inTAG.Bck)) then 
+                  checkAllSegCrc(inTAG)
+                  checkAllKghCrc(inTAG)
+                end
                 --get bytes from ready outTAG
                 bytes=tagToBytes(inTAG)
+                -- mater-token-crc
+                if (inTAG.Type~="SAM") then bytes[22]=calcMtCrc(bytes) end
                 if (bytes) then   
                   writeFile(bytes, 'MylegicClone.hex')         
                   writeToTag(bytes, taglen, 'MylegicClone.hex')
-                  actions['rt']('') 
+                  actions.rt('') 
                 end
                end
               end,
@@ -915,11 +970,13 @@ function modifyMode()
     ["di"] = function(x) if (istable(inTAG)) then print("\n"..dumpTag(inTAG).."\n") end end,
     ["do"] = function(x) if (istable(outTAG)) then print("\n"..dumpTag(outTAG).."\n") end end,
     ["ds"] = function(x) 
-                sel=selectSegment(inTAG)
+                if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+                else sel=selectSegment(inTAG) end
                 if (sel) then print("\n"..(dumpSegment(inTAG, sel) or "no Segments available").."\n") end 
               end,
     ["es"] = function(x) 
-              sel=selectSegment(inTAG)
+              if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+              else sel=selectSegment(inTAG) end
               if (sel) then 
                 if(istable(inTAG.SEG)) then
                   inTAG=editSegment(inTAG, sel)
@@ -937,7 +994,8 @@ function modifyMode()
             end,
     ["rs"] = function(x) 
               if (istable(inTAG)) then
-                sel=selectSegment(inTAG)
+                if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+                else sel=selectSegment(inTAG) end
                 inTAG=delSegment(inTAG, sel)
                 for i=0, #inTAG.SEG do
                   inTAG.SEG[i]=regenSegmentHeader(inTAG.SEG[i])
@@ -945,17 +1003,25 @@ function modifyMode()
               end
             end,
     ["ed"] = function(x) 
-              sel=selectSegment(inTAG)
+              if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+              else sel=selectSegment(inTAG) end
               if (sel) then 
                 inTAG.SEG[sel].data=editSegmentData(inTAG.SEG[sel].data) 
               end
             end,
+    ["et"] = function(x) 
+              if (istable(inTAG)) then
+                editTag(inTAG)
+              end
+            end,
      ["ts"] = function(x) 
-                sel=selectSegment(inTAG)
+               if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+               else sel=selectSegment(inTAG) end
                 regenSegmentHeader(inTAG.SEG[sel]) 
               end,
      ["tk"] = function(x) 
-                sel=selectSegment(inTAG)
+                if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+                else sel=selectSegment(inTAG) end
                 if(inTAG.SEG[sel].kgh) then inTAG.SEG[sel].kgh=false
                 else inTAG.SEG[sel].kgh=true end
               end,
@@ -966,6 +1032,20 @@ function modifyMode()
                --get credential-string for kgh-crc on certain segment
                --usage: xc <segment-index>
                print("k "..kghCrcCredentials(inTAG, x))
+              end,
+     ["xb"] = function(x) 
+               -- just for testing @mosci
+                if(istable(inTAG.SEG[tonumber(x,10)])) then
+                  local s=kghCrcCredentials(inTAG, x)..inTAG.SEG[tonumber(x,10)].data[#inTAG.SEG[tonumber(x,10)].data-1]
+                  for i=2,string.len(s),2 do
+                    x=string.sub(s,0,i)
+                    y=("%02x"):format(utils.Crc8Legic(x))
+                    z=string.sub(s,i+1,i+2)
+                    if (y==z) then print("match: "..i.." k "..x.." == "..z) 
+                    end
+                  end  
+                  else print("not table found - have you read a tag before? (rt)") 
+                end
               end,
      ["cc"] = function(x)  if (istable(inTAG)) then checkAllSegCrc(inTAG) end end,
      ["ck"] = function(x)  if (istable(inTAG)) then checkAllKghCrc(inTAG) end end,
@@ -979,7 +1059,7 @@ function modifyMode()
       actions[string.lower(string.sub(ic,0,1))](string.sub(ic,3))
     elseif (type(actions[string.lower(string.sub(ic,0,2))])=='function') then
       actions[string.lower(string.sub(ic,0,2))](string.sub(ic,4))
-    else actions['h']('') end
+    else actions.h('') end
   until (string.sub(ic,0,1)=="q")
 end
 
