@@ -15,7 +15,7 @@
 
 example = "script run legic"
 author  = "Mosci"
-version = "0.5-beta"
+version = "0.6-beta"
 desc =
 [[
 
@@ -28,12 +28,12 @@ it's kinda interactive with following commands in three categories:
   wt => write   Tag     as => add    Segment      sf => save File 
                         es => edit   Segment      xf => xor  File
   ct => copy io Tag     ed => edit   Data
-  tc => copy oi Tag     et => edit   Token
-  di => dump  inTag     rs => remove Segment
-  do => dump outTag     cc => check  Segment-CRC                  
-                        ck => check  KGH                
+  tc => copy oi Tag     rs => remove Segment
+  di => dump  inTag     cc => check  Segment-CRC
+  do => dump outTag     ck => check  KGH        
                         tk => toggle KGH-Flag
-  q => quit             xc => get    KGH-Str      h => this Help 
+                        mt => make   Token
+   q => quit            et => edit   Token         h => this Help 
  
  Data I/O 
  rt: 'read tag'         - reads a tag placed near to the PM3
@@ -53,6 +53,7 @@ it's kinda interactive with following commands in three categories:
                           all other Segment-Header-Values are either calculated or not needed to edit (yet)
  ed: 'edit data'        - edit the Data of a Segment (ADF-Aera / Stamp & Payload specific Data)
  et: 'edit Token'       - edit Data of a Token (CDF-Area / SAM, SAM64, SAM63, IAM, GAM specific Data)
+ mt: 'make Token'       - create a Token 'from scratch' (guided)
  rs: 'remove segment'   - removes a Segment (except Segment 00, but this can be set to valid=0 for Master-Token)
  cc: 'check Segment-CRC'- checks & calculates (if check failed) the Segment-CRC of all Segments
  ck: 'check KGH-CRC'    - checks the and calculates a 'Kaba Group Header' if one was detected
@@ -504,7 +505,7 @@ function dumpTag(tag)
   res ="\nCDF: System Area"
   res= res.."\n"..dumpCDF(tag)
   -- segments (user-token area)
-  if(istable(tag.Type=="SAM")) then
+  if(tag.Type=="SAM") then
     res = res.."\n\nADF: User Area"
     for i=0, #tag.SEG do
       res=res.."\n"..dumpSegment(tag, i).."\n"
@@ -700,6 +701,45 @@ function calcHeaderRaw(wrp, wrc, rd)
   res=("%02x"):format(tonumber(wrp, 16)+tonumber(wrc.."0", 16)+((rd>0) and tonumber("8"..(rd-1), 16) or 0))         
   return res
 end
+
+---
+-- make token
+function makeToken()
+  local mt={
+    ['Type']    = {"SAM", "SAM63", "SAM64", "IAM", "GAM"},
+    ['DCF']     = {"60ea", "31fa", "30fa", "80fa", "f0fa"},
+    ['WRP']     = {"15", "2", "2", "2", "2"},
+    ['WRC']     = {"01", "02", "02", "00", "00"},
+    ['RD']      = {"01", "00", "00", "00", "00"},
+    ['Stamp']   = {"00", "00", "00", "00", "00"},
+    ['Segment'] = {"0d", "c0", "04", "00", "be", "01", "02", "03", "04", "01", "02", "03", "04"}
+  }
+  ttype=""
+  for k, v in pairs(mt.Type) do
+    ttype=ttype..k..") "..v.."  "
+  end
+  mtq=tonumber(input("select number for Token-Type\n"..ttype, '1'), 10)
+  if (type(mtq)~="number") then return print("selection invalid!") 
+  elseif (mtq>#mt.Type) then return print("selection invalid!")
+  else print("Token-Type '"..mt.Type[mtq].."' selected") end
+  local raw=calcHeaderRaw(mt.WRP[mtq], mt.WRC[mtq], mt.RD[mtq])
+  local mtCRC="00"
+  
+  bytes={"01", "02", "03", "04", "cb", string.sub(mt.DCF[mtq], 0, 2), string.sub(mt.DCF[mtq], 3), raw,
+         "00", "00", "00", "00", "00", "00", "00", "00",
+         "00", "00", "00", "00", "00", "00"}
+  if (mtq==1) then
+    for i=0, #mt.Segment do
+      table.insert(bytes, mt.Segment[i])
+    end
+    bytes[9]="ff"
+  end
+  for i=#bytes, 1023 do table.insert(bytes, "00") end
+  if (mtq>1) then bytes[22]=calcMtCrc(bytes) end
+  local tempTag=createTagTable()
+  return bytesToTag(bytes, tempTag)
+end
+
 --- 
 -- edit token-data
 function editTag(tag)
@@ -707,9 +747,9 @@ function editTag(tag)
   local edit_sim="MCD MSN0 MSN2 MSN2 MCC DCFl DCFh WRP WRC RD"
   -- on real tags it makes only sense to edit DCF, WRP, WRC, RD
   local edit_real="DCFl DCFh WRP WRC RD"
-  if (confirm("shoud this Data be written to a real Tag?")) then
-    edit_tag=edit_real
-  else edit_tag=edit_sim end
+  if (confirm("do you want to edit non-writeable values (e.g. for simulation)?")) then
+    edit_tag=edit_sim
+  else edit_tag=edit_real end
     
   if(istable(tag)) then
     for k,v in pairs(tag) do
@@ -926,17 +966,17 @@ end
 function modifyHelp()
   local t=[[
   
-    Data I/O           Segment Manipulation        File I/O   
-------------------     --------------------      ---------------
+    Data I/O            Segment Manipulation        File I/O   
+------------------      --------------------     ---------------
   rt => read    Tag     ds => dump   Segments     lf => load File
   wt => write   Tag     as => add    Segment      sf => save File 
   ct => copy io Tag     es => edit   Segment      xf => xor  File
-  tc => copy oi Tag     ed => edit   Data     
+  tc => copy oi Tag     ed => edit   Data
   di => dump  inTag     rs => remove Segment
   do => dump outTag     cc => check  Segment-CRC                  
                         ck => check  KGH                
                         tk => toggle KGH-Flag
-  q => quit             xc => get    KGH-Str      h => this Help
+  q => quit             mt => make   Token         h => this Help
   ]]                    
   return t
 end
@@ -1061,10 +1101,14 @@ function modifyMode()
               end
             end,
     ["et"] = function(x) 
-              if (istable(inTAG)) then
-                editTag(inTAG)
-              end
+                if (istable(inTAG)) then
+                  editTag(inTAG)
+                end
             end,
+    ["mt"] = function(x) 
+                inTAG=makeToken()
+                actions.di()
+             end,
      ["ts"] = function(x) 
                if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                else sel=selectSegment(inTAG) end
