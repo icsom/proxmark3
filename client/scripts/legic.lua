@@ -966,18 +966,19 @@ end
 function modifyHelp()
   local t=[[
   
-    Data I/O            Segment Manipulation        File I/O   
-------------------      --------------------     ---------------
-  rt => read    Tag     ds => dump   Segments     lf => load File
-  wt => write   Tag     as => add    Segment      sf => save File 
-  ct => copy io Tag     es => edit   Segment      xf => xor  File
-  tc => copy oi Tag     ed => edit   Data
-  di => dump  inTag     rs => remove Segment
-  do => dump outTag     cc => check  Segment-CRC                  
-                        ck => check  KGH                
-                        tk => toggle KGH-Flag
-  q => quit             mt => make   Token         h => this Help
-  ]]                    
+    Data I/O            Segment Manipulation          File I/O   
+------------------      --------------------     ------------------
+  rt => read    Tag     ds => dump   Segments     lf => load   File
+  wt => write   Tag     as => add    Segment      sf => save   File 
+                        es => edit   Segment      xf => xor to File
+  ct => copy io Tag     ed => edit   Data
+  tc => copy oi Tag     rs => remove Segment
+                        cc => check  Segment-CRC                  
+  di => dump  inTag     ck => check  KGH                
+  do => dump outTag     tk => toggle KGH-Flag
+                        mt => make   Token         
+   q => quit            et => edit   Token         h => this Help
+  ]] 
   return t
 end
 
