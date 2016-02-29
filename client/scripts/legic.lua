@@ -15,6 +15,7 @@
 
 example = "script run legic"
 author  = "Mosci"
+version = "0.5-beta"
 desc =
 [[
 
@@ -25,8 +26,9 @@ it's kinda interactive with following commands in three categories:
  ------------------     --------------------      ---------------
   rt => read    Tag     ds => dump   Segments     lf => load File
   wt => write   Tag     as => add    Segment      sf => save File 
-  ct => copy io Tag     es => edit   Segment      xf => xor  File
-  tc => copy oi Tag     ed => edit   Data     
+                        es => edit   Segment      xf => xor  File
+  ct => copy io Tag     ed => edit   Data
+  tc => copy oi Tag     et => edit   Token
   di => dump  inTag     rs => remove Segment
   do => dump outTag     cc => check  Segment-CRC                  
                         ck => check  KGH                
@@ -49,7 +51,8 @@ it's kinda interactive with following commands in three categories:
  as: 'add Segment'      - will add a 'empty' Segment to the inTag
  es: 'edit Segment'     - edit the Segment-Header of a selected Segment (len, WRP, WRC, RD, valid)
                           all other Segment-Header-Values are either calculated or not needed to edit (yet)
- ed: 'edit data'        - edit the Data of a Segment (Stamp & Payload)
+ ed: 'edit data'        - edit the Data of a Segment (ADF-Aera / Stamp & Payload specific Data)
+ et: 'edit Token'       - edit Data of a Token (CDF-Area / SAM, SAM64, SAM63, IAM, GAM specific Data)
  rs: 'remove segment'   - removes a Segment (except Segment 00, but this can be set to valid=0 for Master-Token)
  cc: 'check Segment-CRC'- checks & calculates (if check failed) the Segment-CRC of all Segments
  ck: 'check KGH-CRC'    - checks the and calculates a 'Kaba Group Header' if one was detected
@@ -85,6 +88,7 @@ end
 -- Usage help
 function help()
 	print(desc)
+	print(version)
 	print("Example usage")
 	print(example)
 end
@@ -368,13 +372,14 @@ function dumpCDF(tag)
   local res=""
   local i=0
   local raw=""
+  local bytes
   if (istable(tag)) then
     res = res.."MCD: "..tag.MCD..", MSN: "..tag.MSN0.." "..tag.MSN1.." "..tag.MSN2..", MCC: "..tag.MCC.."\n"
     res = res.."DCF: "..tag.DCFl.." "..tag.DCFh..", Token_Type="..tag.Type.." (OLE="..tag.OLE.."), Stamp_len="..tag.Stamp_len.."\n"
     res = res.."WRP="..tag.WRP..", WRC="..tag.WRC..", RD="..tag.RD..", raw="..tag.raw..((tag.raw=='9f') and (", SSC="..tag.SSC.."\n") or "\n")
     
     -- credential (end-user tag)
-    if (tag.raw..tag.SSC=="9fff") then
+    if (tag.Type=="SAM") then
       res = res.."Remaining Header Area\n"
       for i=0, (#tag.data) do
         res = res..tag.data[i].." "
@@ -399,8 +404,10 @@ function dumpCDF(tag)
       for i=0, (#tag.data-tag.Stamp_len-1) do
         res = res..tag.data[i].." "
       end
+      bytes=tagToBytes(tag)
+      local mtcrc=calcMtCrc(bytes)
       res=res.."\nMaster-Token CRC: "
-      res = res ..tag.MTC[1]
+      res = res ..tag.MTC[1].." ("..((tag.MTC[1]==mtcrc) and "valid" or "error")..")"
     end
     return res
   else print("no valid Tag in dumpCDF") end
@@ -496,8 +503,8 @@ function dumpTag(tag)
   -- sytstem area
   res ="\nCDF: System Area"
   res= res.."\n"..dumpCDF(tag)
-  -- segments (user area)
-  if(istable(tag.SEG[0])) then
+  -- segments (user-token area)
+  if(istable(tag.Type=="SAM")) then
     res = res.."\n\nADF: User Area"
     for i=0, #tag.SEG do
       res=res.."\n"..dumpSegment(tag, i).."\n"
@@ -685,28 +692,73 @@ function calcSegmentCrc(tag, segid)
     return ("%02x"):format(utils.Crc8Legic(data))
 end
 
+
+function calcHeaderRaw(wrp, wrc, rd)
+  local res
+  wrp=("%02x"):format(tonumber(wrp, 10))
+  rd=tonumber(rd, 16)
+  res=("%02x"):format(tonumber(wrp, 16)+tonumber(wrc.."0", 16)+((rd>0) and tonumber("8"..(rd-1), 16) or 0))         
+  return res
+end
 --- 
 -- edit token-data
 function editTag(tag)
-  local edit_possible="MCD MSN0 MSN2 MSN2 MCC DCFl DCFh WRP WRC RD raw"
+  -- for simulation it makes sense to edit everything
+  local edit_sim="MCD MSN0 MSN2 MSN2 MCC DCFl DCFh WRP WRC RD"
+  -- on real tags it makes only sense to edit DCF, WRP, WRC, RD
+  local edit_real="DCFl DCFh WRP WRC RD"
+  if (confirm("shoud this Data be written to a real Tag?")) then
+    edit_tag=edit_real
+  else edit_tag=edit_sim end
+    
   if(istable(tag)) then
     for k,v in pairs(tag) do
-      if(type(v)~="table" and type(v)~="boolean" and string.find(edit_possible,k)) then
+      if(type(v)~="table" and type(v)~="boolean" and string.find(edit_tag, k)) then
         tag[k]=input("value for: "..k, v)
       end
     end
-    -- master-token specific
-    if(istable(tag.Bck)==false) then
-      -- stamp-data length=0-(0xfc-DCFh)-1
-      -- on MT: SSC holds the Starting Stamp Character (Stamp0)
-      tag.SSC=input("Stamp0: ", tag.SSC)
-      for i=0, (tonumber(0xfc ,10)-("%d"):format('0x'..tag.DCFh))-2 do
-      tag.data[i]=input("Stamp".. i+1 ..": ", tag.data[i])
-      end  
+    
+    if (tag.Type=="SAM") then ttype="Header"; else ttype="Stamp"; end
+      if (confirm("do you want to edit "..ttype.." Data?")) then
+      -- master-token specific
+      if(istable(tag.Bck)==false) then
+        -- stamp-data length=(0xfc-DCFh)
+        -- on MT: SSC holds the Starting Stamp Character (Stamp0)
+        tag.SSC=input(ttype.."0: ", tag.SSC)
+        -- rest of stamp-bytes are in tag.data 0..n
+        for i=0, (tonumber(0xfc ,10)-("%d"):format('0x'..tag.DCFh))-2 do
+        tag.data[i]=input(ttype.. i+1 ..": ", tag.data[i])
+        end  
+      else
+        --- on credentials byte7 should always be 9f and byte8 ff 
+        -- on Master-Token not (even on SAM63/64 not)
+        -- tag.SSC=input(ttype.."0: ", tag.SSC)
+        for i=0, #tag.data do
+           tag.data[i]=input(ttype.. i ..": ", tag.data[i])
+        end
+      end
     end
+    
     bytes=tagToBytes(tag)
-    -- calc new Master-Token crc
-    if(tag.Type~="SAM") then bytes[22]=calcMtCrc(bytes) end
+   
+    --- check data-consistency (calculate tag.raw)
+    bytes[8]=calcHeaderRaw(tag.WRP, tag.WRC, tag.RD)
+   
+    --- Master-Token specific
+    -- should be triggered if a SAM was converted to a non-SAM (user-Token to Master-Token)
+    -- or a Master-Token has being edited (also SAM64 & SAM63 - which are in fact Master-Token)
+    if(tag.Type~="SAM" or bytes[6]..bytes[7]~="60ea") then 
+      -- calc new Master-Token crc
+      bytes[22]=calcMtCrc(bytes)   
+    else
+      -- ensure tag.SSC set to 'ff' on credential-token (SAM)
+      bytes[9]='ff'
+      -- if a Master-Token was converted to a Credential-Token
+      -- lets unset the Time-Area to 00 00 (will contain Stamp-Data on MT)
+      bytes[21]='00'
+      bytes[22]='00'
+    end
+   
     tag=bytesToTag(bytes, tag)
   end
 end
@@ -721,7 +773,6 @@ function calcMtCrc(bytes)
     cmd=cmd..bytes[8+i]
   end
   local res=("%02x"):format(utils.Crc8Legic(cmd))
-  print("k "..cmd)
   return res
 end
 
@@ -916,7 +967,7 @@ function modifyMode()
                 inTAG.MSN1 = outbytes[3]
                 inTAG.MSN2 = outbytes[4]
                 inTAG.MCC  = outbytes[5]
-                -- recheck all segments-crc/kghcrc
+                -- recheck all segments-crc/kghcrc (only on a credential)
                 if(istable(inTAG.Bck)) then 
                   checkAllSegCrc(inTAG)
                   checkAllKghCrc(inTAG)
