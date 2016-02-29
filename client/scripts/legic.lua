@@ -15,7 +15,7 @@
 
 example = "script run legic"
 author  = "Mosci"
-version = "0.6-beta"
+version = "0.9-rc"
 desc =
 [[
 
@@ -477,19 +477,23 @@ end
 ---
 -- check all segmnet-crc
 function checkAllSegCrc(tag)
-  for i=0, #tag.SEG do
-    crc=calcSegmentCrc(tag, i)
-    tag.SEG[i].crc=crc
-  end
+  if (istable(tag.SEG[0])) then
+    for i=0, #tag.SEG do
+      crc=calcSegmentCrc(tag, i)
+      tag.SEG[i].crc=crc
+    end
+    else return print("Matser-Token / unsegmented Tag") end
 end
 
 ---
 -- check all segmnet-crc
 function checkAllKghCrc(tag)
-  for i=0, #tag.SEG do
-    crc=calcKghCrc(tag, i)
-    if (tag.SEG[i].kgh) then 
-      tag.SEG[i].data[#tag.SEG[i].data-1]=crc
+  if (istable(tag.SEG[0])) then
+    for i=0, #tag.SEG do
+      crc=calcKghCrc(tag, i)
+      if (tag.SEG[i].kgh) then 
+        tag.SEG[i].data[#tag.SEG[i].data-1]=crc
+      end
     end
   end
 end
@@ -636,15 +640,17 @@ end
 --- CRC calculation and validation
 -- build kghCrc credentials
 function kghCrcCredentials(tag, segid) 
-  local x='00'
-  if (type(segid)=="string") then segid=tonumber(segid,10) end
-  if (segid>0) then x='93' end
-  local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2..("%02x"):format(tag.SEG[segid].WRP)
-  cred = cred..("%02x"):format(tag.SEG[segid].WRC)..("%02x"):format(tag.SEG[segid].RD)..x
-  for i=0, #tag.SEG[segid].data-2 do
-    cred = cred..tag.SEG[segid].data[i]
+  if (istable(tag.SEG[0])) then
+    local x='00'
+    if (type(segid)=="string") then segid=tonumber(segid,10) end
+    if (segid>0) then x='93' end
+    local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2..("%02x"):format(tag.SEG[segid].WRP)
+    cred = cred..("%02x"):format(tag.SEG[segid].WRC)..("%02x"):format(tag.SEG[segid].RD)..x
+    for i=0, #tag.SEG[segid].data-2 do
+      cred = cred..tag.SEG[segid].data[i]
+    end
+    return cred
   end
-  return cred
 end
 
 ---
@@ -661,18 +667,22 @@ end
 ---
 -- calcuate kghCRC for a given segment 
 function calcKghCrc(tag, segid)
+  if (istable(tag.SEG[0])) then
   -- check if a 'Kaber Group Header' exists
     local i
     local data=kghCrcCredentials(tag, segid)
     return ("%02x"):format(utils.Crc8Legic(data))
+  end
 end
 
 ---
 -- build segmentCrc credentials
 function segmentCrcCredentials(tag, segid) 
-  local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
-  cred = cred ..tag.SEG[segid].raw[1]..tag.SEG[segid].raw[2]..tag.SEG[segid].raw[3]..tag.SEG[segid].raw[4]
-  return cred
+  if (istable(tag.SEG[0])) then
+    local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
+    cred = cred ..tag.SEG[segid].raw[1]..tag.SEG[segid].raw[2]..tag.SEG[segid].raw[3]..tag.SEG[segid].raw[4]
+    return cred
+    else return print("Master-Token / unsegmented Tag!") end
 end
 
 ---
@@ -688,9 +698,11 @@ end
 ---
 -- calculate segmentCRC for a given segment
 function calcSegmentCrc(tag, segid)
+  if (istable(tag.SEG[0])) then
   -- check if a 'Kaber Group Header' exists
     local data=segmentCrcCredentials(tag, segid)
     return ("%02x"):format(utils.Crc8Legic(data))
+  end
 end
 
 
@@ -734,9 +746,13 @@ function makeToken()
     end
     bytes[9]="ff"
   end
+  -- fill bytes
   for i=#bytes, 1023 do table.insert(bytes, "00") end
+  -- if Master-Token -> calc Master-Token-CRC
   if (mtq>1) then bytes[22]=calcMtCrc(bytes) end
   local tempTag=createTagTable()
+  -- remove segment if MasterToken
+  if (mtq>1) then tempTag.SEG[0]=nil end
   return bytesToTag(bytes, tempTag)
 end
 
@@ -903,7 +919,7 @@ end
 -- helper to selecting a segment
 function selectSegment(tag)
   local sel
-  if (istable(tag)) then 
+  if (istable(tag.SEG[0])) then 
     print("availabe Segments:\n"..segmentList(tag))
     sel=input("select Segment: ", '00')
     sel=tonumber(sel,10)
@@ -949,16 +965,18 @@ end
 ---
 -- delete segment (except segment 00)
 function delSegment(tag, index)
-  local i
-  if (type(index)=="string") then index=tonumber(index,10) end
-  if (index > 0) then
-    table.remove(tag.SEG, index)
-    for i=0, #tag.SEG do
-      tag.SEG[i].index=("%02d"):format(i)
+  if (istable(tag.SEG[0])) then
+    local i
+    if (type(index)=="string") then index=tonumber(index,10) end
+    if (index > 0) then
+      table.remove(tag.SEG, index)
+      for i=0, #tag.SEG do
+        tag.SEG[i].index=("%02d"):format(i)
+      end
     end
+    if(istable(tag.SEG[#tag.SEG])) then tag.SEG[#tag.SEG].last=1 end
+    return tag
   end
-  if(istable(tag.SEG[#tag.SEG])) then tag.SEG[#tag.SEG].last=1 end
-  return tag
 end
 
 ---
@@ -1070,7 +1088,7 @@ function modifyMode()
               if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
               else sel=selectSegment(inTAG) end
               if (sel) then 
-                if(istable(inTAG.SEG)) then
+                if(istable(inTAG.SEG[0])) then
                   inTAG=editSegment(inTAG, sel)
                   inTAG.SEG[sel]=regenSegmentHeader(inTAG.SEG[sel])
               else print("no Segments in Tag") end 
@@ -1081,11 +1099,11 @@ function modifyMode()
                 inTAG=addSegment(inTAG)
                 inTAG.SEG[#inTAG.SEG-1]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG-1])
                 inTAG.SEG[#inTAG.SEG]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG]) 
-                else print("unsegmented Tag!")
+                else print("Master-Token / unsegmented Tag!")
               end
             end,
     ["rs"] = function(x) 
-              if (istable(inTAG)) then
+              if (istable(inTAG.SEG[0])) then
                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                 else sel=selectSegment(inTAG) end
                 inTAG=delSegment(inTAG, sel)
@@ -1116,10 +1134,12 @@ function modifyMode()
                 regenSegmentHeader(inTAG.SEG[sel]) 
               end,
      ["tk"] = function(x) 
+               if (istable(inTAG.SEG[0])) then
                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                 else sel=selectSegment(inTAG) end
                 if(inTAG.SEG[sel].kgh) then inTAG.SEG[sel].kgh=false
                 else inTAG.SEG[sel].kgh=true end
+              end
               end,
      ["k"] = function(x) 
                print(("%02x"):format(utils.Crc8Legic(x)))
