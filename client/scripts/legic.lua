@@ -80,6 +80,14 @@ local bbit    = bit32.extract
 local input   = utils.input
 local confirm = utils.confirm
 
+---
+-- curency-codes for Legic-Cash-Segments (ISO 4217)
+local currency = {
+  ["20ac"]="EUR", 
+  ["0024"]="USD", 
+  ["00a3"]="GBP"
+}
+
 --- 
 -- This is only meant to be used when errors occur
 function oops(err)
@@ -739,10 +747,10 @@ function dumpSegment(tag, index)
     end
     
     -- WRP mprotected
-    if (tag.SEG[i].WRP>tag.SEG[i].WRC) then
-      res = res .."\nRemaining write protected area (Stamp):\n"
-      for i2=dp, tag.SEG[i].WRP-tag.SEG[i].WRC-1 do
-        res = res..tag.SEG[i].data[dp].." "
+    if ((tag.SEG[i].WRP-tag.SEG[i].WRC)>0) then
+      res = res .."\nRemaining write protected area:\n"
+      for i2=0, (tag.SEG[i].WRP-tag.SEG[i].WRC)-1 do
+        res = res..tag.SEG[i].data[dp+i2].." "
         dp=dp+1
       end
     end
@@ -1019,6 +1027,8 @@ function modifyMode()
                     taglen=taglen+inTAG.SEG[i].len+5
                   end
                 end
+                
+                local uid_old=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
                 -- read new tag (output tag)
                 outTAG=readFromPM3()
                 outbytes=tagToBytes(outTAG)
@@ -1032,6 +1042,14 @@ function modifyMode()
                 if(istable(inTAG.Bck)) then 
                   checkAllSegCrc(inTAG)
                   checkAllKghCrc(inTAG)
+                  local uid_new=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  for i=0, #inTAG.SEG do
+                    if (check4Dallmyr(uid_old, inTAG.SEG[i].data)) then
+                      io.write(" - fixing known checksums ... ")
+                      inTAG.SEG[i].data=fixDallmyr(uid_new, inTAG.SEG[i].data)
+                      io.write(" done\n")
+                    end
+                  end
                 end
                 --get bytes from ready outTAG
                 bytes=tagToBytes(inTAG)
@@ -1079,7 +1097,24 @@ function modifyMode()
                 end
               end
              end,
-    ["di"] = function(x) if (istable(inTAG)) then print("\n"..dumpTag(inTAG).."\n") end end,
+    ["di"] = function(x) 
+                if (istable(inTAG)) then 
+                  local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  if(istable(inTAG.SEG[0])) then
+                    for i=0, #inTAG.SEG do
+                      if(check4Dallmyr(uid, inTAG.SEG[i].data)) then
+                        io.write("in Segment index: "..inTAG.SEG[i].index.."\n")
+                      elseif(check4LegicCash(inTAG.SEG[i].data)) then
+                        io.write("in Segment index: "..inTAG.SEG[i].index.."\n")
+                        lc=true; 
+                        lci=inTAG.SEG[i].index;
+                      end
+                    end
+                  end
+                  print("\n"..dumpTag(inTAG).."\n") 
+                  if (lc) then actions["lc"](lci) end
+                end 
+              end,
     ["do"] = function(x) if (istable(outTAG)) then print("\n"..dumpTag(outTAG).."\n") end end,
     ["ds"] = function(x) 
                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
@@ -1145,12 +1180,178 @@ function modifyMode()
                 print(("%02x"):format(utils.Crc8Legic(x))) 
               end
              end,
+    ["xb"] = function(x)
+              end,
     ["xc"] = function(x) 
                if (istable(inTAG) and istable(inTAG.SEG[0])) then
                  if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                  else sel=selectSegment(inTAG) end 
                  print("k "..kghCrcCredentials(inTAG, sel)) 
                end 
+              end,
+    ["lc"] = function(x) 
+               if (istable(inTAG) and istable(inTAG.SEG[0])) then
+                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
+                 else sel=selectSegment(inTAG) end 
+                 --if (check4LegicCash(inTAG.SEG[sel].data)) then
+                   print("--------------------------------\n\tLegic-Cash Values\n--------------------------------")
+                   local limit, curr, balance, rid, tcv
+                   -- currency of balance & limit
+                   curr=currency[inTAG.SEG[sel].data[8]..inTAG.SEG[sel].data[9]]
+                   -- maximum balance
+                   limit=string.format("%4.2f", tonumber(inTAG.SEG[sel].data[10]..inTAG.SEG[sel].data[11]..inTAG.SEG[sel].data[12], 16)/100)
+                   -- current balance
+                   balance=string.format("%4.2f", tonumber(inTAG.SEG[sel].data[15]..inTAG.SEG[sel].data[16]..inTAG.SEG[sel].data[17], 16)/100)
+                   -- reader-id who wrote last transaction
+                   rid=tonumber(inTAG.SEG[sel].data[18]..inTAG.SEG[sel].data[19]..inTAG.SEG[sel].data[20], 16)
+                   -- transaction counter value
+                   tcv=tonumber(inTAG.SEG[sel].data[29], 16)
+                   print("Currency:\t\t "..curr)
+                   print("Limit:\t\t\t "..limit)
+                   print("Balance:\t\t "..balance)
+                   print("Transaction Counter:\t "..tcv)
+                   print("Reader-ID:\t\t "..rid.."\n--------------------------------\n")
+                   --end
+               end 
+              end,
+    ["df"] = function(x)
+                actions["lf"](x)
+                res=""
+                for i=0, #inTAG.SEG[1].data do
+                  res=res..inTAG.SEG[1].data[i]
+                end
+                print(res)
+              end,
+    ["dd"] = function(x)
+                if(type(x)=="string" and string.len(x)>=2) then x=tonumber(x, 10)
+                  else x=selectSegment(inTAG) end
+                if (istable(inTAG) and istable(inTAG.SEG[x]) and inTAG.SEG[x].len == 100) then
+                  uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  check4Dallmyr(uid, inTAG.SEG[x].data)
+                  
+                  -- known bytes
+                  uid=inTAG.MCD.." "..inTAG.MSN0.." "..inTAG.MSN1.." "..inTAG.MSN2
+                  stamp=inTAG.SEG[x].data[0].." "..inTAG.SEG[x].data[1].." "..inTAG.SEG[x].data[2]
+                  datastamp=inTAG.SEG[x].data[20].." "..inTAG.SEG[x].data[21].." "..inTAG.SEG[x].data[22]
+                  balance=tonumber(inTAG.SEG[x].data[32]..inTAG.SEG[x].data[33] ,16)
+                  balancecrc=utils.Crc8Legic(uid..inTAG.SEG[x].data[32]..inTAG.SEG[x].data[33])
+                  mirror=tonumber(inTAG.SEG[x].data[35]..inTAG.SEG[x].data[36] ,16)
+                  mirrorcrc=utils.Crc8Legic(uid..inTAG.SEG[x].data[35]..inTAG.SEG[x].data[36])
+                  lastbal0=tonumber(inTAG.SEG[x].data[39]..inTAG.SEG[x].data[40] ,16)
+                  lastbal1=tonumber(inTAG.SEG[x].data[41]..inTAG.SEG[x].data[42] ,16)
+                  lastbal2=tonumber(inTAG.SEG[x].data[43]..inTAG.SEG[x].data[44] ,16)
+                  
+                  test=""
+                  -- display
+                  print("\n-----------------------------------------------")
+                  print("Tag-ID:\t\t\t\t "..uid)
+                  print("Stamp:\t\t\t\t "..stamp)
+                  print("-----------------------------------------------")
+                  
+                  --print("Block 0: "..dumpTable(inTAG.SEG[x].data, "", 3 , 18))
+                  
+                  --print("Block 1: "..dumpTable(inTAG.SEG[x].data, "", 19, 30))
+                  print("Block1 CRC:\t\t\t   ".." "..inTAG.SEG[x].data[31].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 19, 30)), inTAG.SEG[x].data[31])..")")
+                  print("-----------------------------------------------")
+                  --print("Cash  1: "..dumpTable(inTAG.SEG[x].data, "", 32, 37))
+                  print(string.format("Current Balance:\t\t  %3.2f", balance/100).." ".."("..compareCrc(balancecrc, inTAG.SEG[x].data[34])..")")
+                  --print(string.format("\tMirror:\t\t\t %3.2f", mirror/100).." ".."("..compareCrc(balancecrc, inTAG.SEG[x].data[37])..")")
+                  print("-----------------------------------------------")
+                  --print("unkn  1: "..dumpTable(inTAG.SEG[x].data, "", 38, 38))
+                  
+                  --print("Cash  2: "..dumpTable(inTAG.SEG[x].data, "", 39, 40))
+                  print(string.format("Balance History:\t\t  %3.2f", lastbal0/100))
+                  
+                  --print("Cash  3: "..dumpTable(inTAG.SEG[x].data, "", 41, 42))
+                  print(string.format("Balance History:\t\t  %3.2f", lastbal1/100))
+                  
+                  --print("Cash  4: "..dumpTable(inTAG.SEG[x].data, "", 43, 44))
+                  print(string.format("Balance History:\t\t  %3.2f", lastbal2/100))
+                  print("-----------------------------------------------")
+                  --print("unkn  2: "..dumpTable(inTAG.SEG[x].data, "", 43, 44))
+                  --print("same  2: "..dumpTable(inTAG.SEG[x].data, "", 45, 46))
+                  --print("unkn  3: "..dumpTable(inTAG.SEG[x].data, "", 47, 48))
+                  --print("same  3: "..dumpTable(inTAG.SEG[x].data, "", 49, 54))
+                  --print("unkn  4: "..dumpTable(inTAG.SEG[x].data, "", 55, 55))
+                  --print("same  4: "..dumpTable(inTAG.SEG[x].data, "", 56, 61))
+                  print("LegicCRC8: \t\t\t    "..dumpTable(inTAG.SEG[x].data, "", 62, 62).."("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 56, 61)), inTAG.SEG[x].data[62])..")")
+                  --print("same  5: "..dumpTable(inTAG.SEG[x].data, "", 63, 64))
+                  --print("unkn  6: "..dumpTable(inTAG.SEG[x].data, "", 65, 66))
+                  --print("same  6: "..dumpTable(inTAG.SEG[x].data, "", 67, 72))
+                  --print("unkn  7: "..dumpTable(inTAG.SEG[x].data, "", 73, 73))
+                  --print("same  7: "..dumpTable(inTAG.SEG[x].data, "", 74, 88))
+                  print("LegicCrc8: \t\t\t    "..dumpTable(inTAG.SEG[x].data, "", 89, 89).."("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 74, 88)), inTAG.SEG[x].data[89])..")")
+                  --print("same  8: "..dumpTable(inTAG.SEG[x].data, "", 90, 94))
+                  print("-----------------------------------------------")
+                else
+                  print("Segment "..("%02d"):format(x).." semms not to be a Dallmyr-Cash Segment" ) 
+                end
+              end,
+    ["da"] = function(x)
+                if (string.len(x)==0) then actions['lf']('legic_dumps/w_1425.hex')
+                else actions['lf']('legic_dumps/'..x) end
+                if (istable(inTAG) and istable(inTAG.SEG[1]) and inTAG.SEG[1].len == 100) then
+                  uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  check4Dallmyr(uid, inTAG.SEG[1].data)
+                  io.write("\n")
+                  -- known bytes
+                  uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  stamp=inTAG.SEG[1].data[0].." "..inTAG.SEG[1].data[1].." "..inTAG.SEG[1].data[2]
+                  datastamp=inTAG.SEG[1].data[20].." "..inTAG.SEG[1].data[21].." "..inTAG.SEG[1].data[22]
+                  balance=tonumber(inTAG.SEG[1].data[32]..inTAG.SEG[1].data[33] ,16)
+                  balancecrc=utils.Crc8Legic(uid..inTAG.SEG[1].data[32]..inTAG.SEG[1].data[33])
+                  mirror=tonumber(inTAG.SEG[1].data[35]..inTAG.SEG[1].data[36] ,16)
+                  mirrorcrc=utils.Crc8Legic(uid..inTAG.SEG[1].data[35]..inTAG.SEG[1].data[36])
+                  lastbal0=tonumber(inTAG.SEG[1].data[39]..inTAG.SEG[1].data[40] ,16)
+                  lastbal1=tonumber(inTAG.SEG[1].data[41]..inTAG.SEG[1].data[42] ,16)
+                  lastbal2=tonumber(inTAG.SEG[1].data[43]..inTAG.SEG[1].data[44] ,16)
+                  
+                  test=""
+                  -- display
+                  print("---------------------------------")
+                  print("Tag-ID:\t\t\t "..uid)
+                  print("Stamp:\t\t\t "..stamp)
+                  print("---------------------------------")
+                  
+                  print("Block 0: "..dumpTable(inTAG.SEG[1].data, "", 3 , 18))
+                  
+                  print("Block 1: "..dumpTable(inTAG.SEG[1].data, "", 19, 30))
+                  print("block 1 crc:\t\t\t".."    "..inTAG.SEG[1].data[31].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[1].data, "", 19, 30)), inTAG.SEG[1].data[31])..")")
+                  
+                  print("Cash  1: "..dumpTable(inTAG.SEG[1].data, "", 32, 37))
+                  print(string.format("\tcurr-Balance:\t\t %3.2f", balance/100).." ".."("..compareCrc(balancecrc, inTAG.SEG[1].data[34])..")")
+                  print(string.format("\tMirror:\t\t\t %3.2f", mirror/100).." ".."("..compareCrc(balancecrc, inTAG.SEG[1].data[37])..")")
+                  
+                  print("unkn  1: "..dumpTable(inTAG.SEG[1].data, "", 38, 38))
+                  
+                  print("Cash  2: "..dumpTable(inTAG.SEG[1].data, "", 39, 40))
+                  print(string.format("\tLast-Balance0:\t\t  %3.2f", lastbal0/100))
+                  
+                  print("Cash  3: "..dumpTable(inTAG.SEG[1].data, "", 41, 42))
+                  print(string.format("\tLast-Balance1:\t\t  %3.2f", lastbal1/100))
+                  
+                  print("Cash  4: "..dumpTable(inTAG.SEG[1].data, "", 43, 44))
+                  print(string.format("\tLast-Balance2:\t\t  %3.2f", lastbal2/100))
+                  
+                  --print("unkn  2: "..dumpTable(inTAG.SEG[1].data, "", 43, 44))
+                  print("same  2: "..dumpTable(inTAG.SEG[1].data, "", 45, 46))
+                  print("unkn  3: "..dumpTable(inTAG.SEG[1].data, "", 47, 48))
+                  print("same  3: "..dumpTable(inTAG.SEG[1].data, "", 49, 54))
+                  print("unkn  4: "..dumpTable(inTAG.SEG[1].data, "", 55, 55))
+                  print("same  4: "..dumpTable(inTAG.SEG[1].data, "", 56, 61))
+                  print("LegicCRC8:\t\t\t    "..dumpTable(inTAG.SEG[1].data, "", 62, 62).."("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[1].data, "", 56, 61)), inTAG.SEG[1].data[62])..")")
+                  print("same  5: "..dumpTable(inTAG.SEG[1].data, "", 63, 64))
+                  print("unkn  6: "..dumpTable(inTAG.SEG[1].data, "", 65, 66))
+                  print("same  6: "..dumpTable(inTAG.SEG[1].data, "", 67, 72))
+                  print("unkn  7: "..dumpTable(inTAG.SEG[1].data, "", 73, 73))
+                  print("same  7: "..dumpTable(inTAG.SEG[1].data, "", 74, 88))
+                  print("LegicCrc8:\t\t\t    "..dumpTable(inTAG.SEG[1].data, "", 89, 89).."("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[1].data, "", 74, 88)), inTAG.SEG[1].data[89])..")")
+                  print("same  8: "..dumpTable(inTAG.SEG[1].data, "", 90, 94))
+                  
+                end
+              end,
+    ["c6"] = function(x) local crc16=string.format("%4.04x", utils.Crc16(x)) 
+                  print(string.sub(crc16, 0,2).." "..string.sub(crc16, 3,4))
               end,
     ["cc"] = function(x) if (istable(inTAG)) then checkAllSegCrc(inTAG) end end,
     ["ck"] = function(x) if (istable(inTAG)) then checkAllKghCrc(inTAG) end end,
@@ -1165,6 +1366,97 @@ function modifyMode()
       actions[string.lower(string.sub(ic,0,2))](string.sub(ic,4))
     else actions.h('') end
   until (string.sub(ic,0,1)=="q")
+end
+
+function dumpTable(tab, header, tstart, tend)
+  res=""
+  for i=tstart, tend do
+    res=res..tab[i].." "
+  end
+  if (string.len(header)==0) then return res
+  else return (header.." #"..(tend-tstart+1).."\n"..res) end
+end
+
+function compareCrc(calc, guess)
+  calc=("%02x"):format(calc)
+  if (calc==guess) then return "valid"
+  else return "error "..calc.."!="..guess end
+end
+
+---
+-- repair / fix (yet known) crc's of a 'Dallmyr-Cash-Segment'
+-- not all bytes know until yet !!
+function fixDallmyr(uid, data)
+  if(#data==95) then
+    data[31]=("%02x"):format(utils.Crc8Legic(uid..dumpTable(data, "", 19, 30)))
+    data[34]=("%02x"):format(utils.Crc8Legic(uid..data[32]..data[33]))
+    data[37]=("%02x"):format(utils.Crc8Legic(uid..data[35]..data[36]))
+    data[62]=("%02x"):format(utils.Crc8Legic(uid..dumpTable(data, "", 56, 61)))
+    data[89]=("%02x"):format(utils.Crc8Legic(uid..dumpTable(data, "", 74, 88)))
+    return data
+  end
+end
+
+---
+-- repair / fix crc's of a 'Legic-Cash-Segment'
+function fixDallmyr(data)
+  if(#data==32) then
+    local crc1, crc2, crc3
+    crc1=("%04x"):format(utils.Crc16(dumpTable(data, "", 0, 12)))
+    crc2=("%04x"):format(utils.Crc16(dumpTable(data, "", 15, 20)))
+    crc3=("%04x"):format(utils.Crc16(dumpTable(data, "", 23, 29)))
+    data[13]=string.sub(crc1, 0, 2)
+    data[14]=string.sub(crc1, 3, 4)
+    data[21]=string.sub(crc2, 0, 2)
+    data[22]=string.sub(crc2, 3, 4)
+    data[30]=string.sub(crc3, 0, 2)
+    data[31]=string.sub(crc4, 3, 4)
+    return data
+  end
+end
+
+---
+-- chack for signature of a 'Dallmyr-Cash-Segment'
+-- not all bytes know until yet !!
+function check4Dallmyr(uid, data)
+  if(#data==95) then
+    if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 19, 30)), data[31])=="valid") then
+      if (compareCrc(utils.Crc8Legic(uid..data[32]..data[33]), data[34])=="valid") then
+        if (compareCrc(utils.Crc8Legic(uid..data[35]..data[36]), data[37])=="valid") then
+          if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 56, 61)), data[62])=="valid") then
+            if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 74, 88)), data[89])=="valid") then
+              io.write("Dallmyr-Cash Segment detected ")
+              return true
+            end
+          end
+        end
+      end
+    end
+  end
+  return false
+end
+
+---
+-- chack for signature of a 'Legic-Cash-Segment'
+function check4LegicCash(data)
+  if(#data==32) then
+    local stamp_len=(#data-25)
+    local stamp=""
+    for i=0, stamp_len-1 do
+      stamp=stamp..data[i].." "
+    end
+    if (data[7]=="01") then
+      if (("%04x"):format(utils.Crc16(dumpTable(data, "", 0, 12))) == data[13]..data[14]) then
+        if (("%04x"):format(utils.Crc16(dumpTable(data, "", 15, 20))) == data[21]..data[22]) then
+          if (("%04x"):format(utils.Crc16(dumpTable(data, "", 23, 29))) == data[30]..data[31]) then
+            io.write("Legic-Cash Segment detected ")
+            return true
+          end
+        end
+      end
+    end
+  end
+  return false
 end
 
 --- main function
