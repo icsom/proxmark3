@@ -1240,7 +1240,7 @@ function modifyMode()
   local i, outTAG, inTAG, outfile, infile, sel, segment, bytes, outbytes
   actions = {
      ["h"] = function(x) 
-              print(modifyHelp().."\n".."tags im Memory:"..(istable(inTAG) and " inTAG" or "")..(istable(outTAG) and " outTAG" or ""))
+              print("  Version: "..version); print(modifyHelp().."\n".."tags im Memory:"..(istable(inTAG) and " inTAG" or "")..(istable(outTAG) and " outTAG" or ""))
             end,
     ["rt"] = function(x) inTAG=readFromPM3(); actions.di() end,
     ["wt"] = function(x)  
