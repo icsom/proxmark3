@@ -1,7 +1,9 @@
 # .gitignore
 # don't push these files to the repository
 
-
+client/legic_crc8
+client/mifare_dumps/
+client/scripts/xor.lua
 client/legic_dumps/
 client/pm3.sh
 client/scripts/legic_buffer2card.lua
