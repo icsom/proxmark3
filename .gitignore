@@ -8,6 +8,8 @@ client/legic_dumps/
 client/pm3.sh
 client/scripts/legic_buffer2card.lua
 client/shell_scripts/
+client/legic.temp
+client/MyLegicClone.hex
 
 .history
 *.log
