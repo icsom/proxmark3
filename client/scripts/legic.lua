@@ -63,20 +63,21 @@ desc =
 This script helps you to read, create and modify Legic Prime Tags (MIM22, MIM256, MIM1024)
 it's kinda interactive with following commands in three categories:
 
-      Data I/O          Segment Manipulation         File I/O   
- ------------------     --------------------      ---------------
-  rt => read    Tag     ds => dump   Segments     lf => load File
-  wt => write   Tag     as => add    Segment      sf => save File 
-                        es => edit   Segment      xf => xor  File
-  ct => copy io Tag     ed => edit   Data
-  tc => copy oi Tag     rs => remove Segment
-  di => dump  inTag     cc => check  Segment-CRC
-  do => dump outTag     ck => check  KGH        
-                        tk => toggle KGH-Flag
-                        mt => make   Token
-   q => quit            et => edit   Token         h => this Help 
+    Data I/O                    Segment Manipulation               Token-Data
+  -----------------             --------------------            -----------------
+  rt => read    Tag             as => add    Segment            mt => make Token
+  wt => write   Tag             es => edit   Segment Header     et => edit Token data
+  ct => copy io Tag             ed => edit   Segment Data       tk => toggle KGH-Flag
+  tc => copy oi Tag             rs => remove Segment           
+                                cc => check  Segment-CRC            File I/O      
+  di => dump  inTag             ck => check  KGH                -----------------  
+  do => dump  outTag                                            lf => load   File 
+  ds => dump  Segments                                          sf => save   File 
+  lc => dump  Legic-Cash                                        xf => xor to File
+ d3p => dump  3rd Party Cash                                        
+ r3p => raw   3rd Party Cash   
+
  
- Data I/O 
  rt: 'read tag'         - reads a tag placed near to the PM3
  wt: 'write tag'        - writes the content of the 'virtual inTag' to a tag placed near to th PM3
                           without the need of changing anything - MCD,MSN,MCC will be read from the tag
@@ -85,9 +86,6 @@ it's kinda interactive with following commands in three categories:
  tc: 'copy tag'         - copy the 'second virtual Tag' to 'virtual TAG' - not usefull yet, but inernally needed
  di: 'dump inTag'       - shows the current content of the 'virtual Tag'
  do: 'dump outTag'      - shows the current content of the 'virtual outTag'
-
- Segment Manipulation 
- (all manipulations happens only in the 'virtual inTAG' - they need to be written with 'wt' to take effect)
  ds: 'dump Segments'    - will show the content of a selected Segment
  as: 'add Segment'      - will add a 'empty' Segment to the inTag
  es: 'edit Segment'     - edit the Segment-Header of a selected Segment (len, WRP, WRC, RD, valid)
@@ -103,9 +101,8 @@ it's kinda interactive with following commands in three categories:
  xc: 'etra c'           - show string that was used to calculate the kgh-crc of a segment
 dlc: 'dump Legic-Cash'  - show balance and checksums of a legic-Cash Segment
 d3p: 'dump 3rd Party'   - show balance, history and checksums of a (yet) unknown 3rd Party Cash-Segment
-r3p: 'raw 3rd Party'   - show balance, history and checksums of a (yet) unknown 3rd Party Cash-Segment
-  
- Input/Output
+r3p: 'raw 3rd Party'    - show balance, history and checksums of a (yet) unknown 3rd Party Cash-Segment
+e3p: 'edit 3rd Party'   - edit Data in 3rd Party Cash Segment
  lf: 'load file'        - load a (xored) file from the local Filesystem into the 'virtual inTag'
  sf: 'save file'        - saves the 'virtual inTag' to the local Filesystem (xored with Tag-MCC)
  xf: 'xor file'         - saves the 'virtual inTag' to the local Filesystem (xored with choosen MCC - use '00' for plain values)
@@ -1216,25 +1213,26 @@ end
 -- helptext for modify-mode
 function modifyHelp()
   local t=[[
-  
-    Data I/O                 Segment Manipulation                  File I/O   
-------------------           --------------------             ------------------
-  rt => read    Tag          ds => dump   Segments             lf => load   File
-  wt => write   Tag          as => add    Segment              sf => save   File 
-                             es => edit   Segment              xf => xor to File
-  ct => copy io Tag          ed => edit   Data             
-  tc => copy oi Tag          rs => remove Segment            
-                             cc => check  Segment-CRC                          
-  di => dump  inTag          ck => check  KGH                        
-  do => dump outTag          tk => toggle KGH-Flag         
-                             mt => make   Token                 
-                             et => edit   Token                 
-                            dlc => dump   Legic-Cash        
-                            d3p => dump   3rd Party Cash
-   q => quit                r3p => raw    3rd Party Cash
+                                                                                    
+      Data I/O                  Segment Manipulation               Token-Data
+  -----------------             --------------------            -----------------
+  rt => read    Tag             as => add    Segment            mt => make Token
+  wt => write   Tag             es => edit   Segment Header     et => edit Token data 
+  ct => copy io Tag             ed => edit   Segment Data       tk => toggle KGH-Flag
+  tc => copy oi Tag             rs => remove Segment           
+                                cc => check  Segment-CRC            File I/O      
+  di => dump  inTag             ck => check  KGH                -----------------  
+  do => dump  outTag                                            lf => load   File 
+  ds => dump  Segments                                          sf => save   File 
+  lc => dump  Legic-Cash                                        xf => xor to File
+ d3p => dump  3rd Party Cash                                        
+ r3p => raw   3rd Party Cash   
+                           
+                                      q => quit
   ]]                      
   return t
 end
+
 
 --- 
 -- modify Tag (interactive)
