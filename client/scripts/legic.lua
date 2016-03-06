@@ -108,7 +108,7 @@ e3p: 'edit 3rd Party'   - edit Data in 3rd Party Cash Segment
  xf: 'xor file'         - saves the 'virtual inTag' to the local Filesystem (xored with choosen MCC - use '00' for plain values)
  
 ]]
-
+currentTag="inTAG"
 --- 
 -- requirements
 local utils   = require('utils')
@@ -781,7 +781,7 @@ function dumpSegment(tag, index)
 
     -- WRC protected
     if (tag.SEG[i].WRC>0) then
-      res = res .."\nWRC protected area (Stamp):\n"
+      res = res .."\nWRC protected area:\n"
       for i2=dp, tag.SEG[i].WRC-1 do
         res = res..tag.SEG[i].data[dp].." "
         dp=dp+1
@@ -791,8 +791,8 @@ function dumpSegment(tag, index)
     -- WRP mprotected
     if ((tag.SEG[i].WRP-tag.SEG[i].WRC)>0) then
       res = res .."\nRemaining write protected area:\n"
-      for i2=0, (tag.SEG[i].WRP-tag.SEG[i].WRC)-1 do
-        res = res..tag.SEG[i].data[dp+i2].." "
+      for i2=dp, (tag.SEG[i].WRP-tag.SEG[i].WRC)-1 do
+        res = res..tag.SEG[i].data[dp].." "
         dp=dp+1
       end
     end
@@ -1024,6 +1024,7 @@ function edit3rdUid(mapid, uid, data)
   data[48]=string.sub(mapid, 5 ,6)
   return fix3rdPartyCash1(uid, data)
 end
+
 ---
 -- edit balance 3rd party cash
 function edit3rdCash(new_cash, uid, data)
@@ -1042,6 +1043,7 @@ function edit3rdCash(new_cash, uid, data)
   data[44]='00'
   return fix3rdPartyCash1(uid, data)
 end
+
 ---
 -- repair / fix crc's of a 'Legic-Cash-Segment'
 function fixLegicCash(data)
@@ -1237,12 +1239,17 @@ end
 --- 
 -- modify Tag (interactive)
 function modifyMode()
-  local i, outTAG, inTAG, outfile, infile, sel, segment, bytes, outbytes
+  local i, backupTAG,  outTAG, inTAG, outfile, infile, sel, segment, bytes, outbytes
+  
   actions = {
      ["h"] = function(x) 
-              print("  Version: "..version); print(modifyHelp().."\n".."tags im Memory:"..(istable(inTAG) and " inTAG" or "")..(istable(outTAG) and " outTAG" or ""))
+              print("  Version: "..version); 
+              print(modifyHelp().."\n".."tags im Memory: "..(istable(inTAG) and ((currentTag=='inTAG') and "*mainTAG" or "mainTAG") or "").."  "..(istable(backupTAG) and ((currentTag=='backupTAG') and "*backupTAG" or "backupTAG") or ""))
             end,
-    ["rt"] = function(x) inTAG=readFromPM3(); actions.di() end,
+    ["rt"] = function(x) 
+                inTAG=readFromPM3(); 
+                --actions.di() 
+              end,
     ["wt"] = function(x)  
               if(istable(inTAG.SEG)) then 
                   local taglen=22
@@ -1286,13 +1293,28 @@ function modifyMode()
                 end
                end
               end,
+    ---
+    -- switich and copy virtual tags
+              
     ["ct"] = function(x)  
-                print("copy virtual input-TAG to output-TAG")
-                outTAG=inTAG
+                print("copy mainTAG to backupTAG")  
+                  outTAG=deepCopy(inTAG)
+                  backupTAG=deepCopy(inTAG)
             end,
     ["tc"] = function(x)  
-                print("copy virtual output-TAG to input-TAG")
-                inTAG=outTAG
+                print("copy backupTAG to mainTAG")
+                inTAG=deepCopy(backupTAG)
+            end,
+    ["tt"] = function(x)  
+                print("toggle to "..((currentTag=='inTAG') and "backupTAG" or "mainTAG"))
+                if(currentTag=="inTAG") then
+                  outTAG=deepCopy(inTAG)
+                  inTAG=deepCopy(backupTAG)
+                  currentTag='backupTAG'
+                else
+                  inTAG=deepCopy(outTAG)
+                  currentTag='inTAG'
+                end
             end,
     ["lf"] = function(x)  
               if (file_check(x)) then filename=x
@@ -1339,7 +1361,7 @@ function modifyMode()
                   if (lc) then actions["dlc"](lci) end
                 end 
               end,
-    ["do"] = function(x) if (istable(outTAG)) then print("\n"..dumpTag(outTAG).."\n") end end,
+    ["do"] = function(x) if (istable(backupTAG)) then print("\n"..dumpTag(backupTAG).."\n") end end,
     ["ds"] = function(x) 
                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                 else sel=selectSegment(inTAG) end
@@ -1414,30 +1436,35 @@ function modifyMode()
                end 
               end,
     ["dlc"] = function(x) 
-               if (istable(inTAG) and istable(inTAG.SEG[0])) then
-                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
-                 else sel=selectSegment(inTAG) end 
-                 if (check4LegicCash(inTAG.SEG[sel].data)) then
-                   io.write("in Segment "..inTAG.SEG[sel].index.." :\n")
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                -- if segment index was user defined
+                if (type(x)=="string" and string.len(x)>0) then 
+                  x=tonumber(x,10)
+                  print(string.format("User-Selected Index %02d", x))
+                -- or try to find match
+                else x=autoSelectSegment(inTAG, "legiccash") end
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                if (istable(inTAG.SEG[x])) then
+                   io.write("in Segment "..inTAG.SEG[x].index.." :\n")
                    print("--------------------------------\n\tLegic-Cash Values\n--------------------------------")
                    local limit, curr, balance, rid, tcv
                    -- currency of balance & limit
-                   curr=currency[inTAG.SEG[sel].data[8]..inTAG.SEG[sel].data[9]]
+                   curr=currency[inTAG.SEG[x].data[8]..inTAG.SEG[x].data[9]]
                    -- maximum balance
-                   limit=string.format("%4.2f", tonumber(inTAG.SEG[sel].data[10]..inTAG.SEG[sel].data[11]..inTAG.SEG[sel].data[12], 16)/100)
+                   limit=string.format("%4.2f", tonumber(inTAG.SEG[x].data[10]..inTAG.SEG[x].data[11]..inTAG.SEG[x].data[12], 16)/100)
                    -- current balance
-                   balance=string.format("%4.2f", tonumber(inTAG.SEG[sel].data[15]..inTAG.SEG[sel].data[16]..inTAG.SEG[sel].data[17], 16)/100)
+                   balance=string.format("%4.2f", tonumber(inTAG.SEG[x].data[15]..inTAG.SEG[x].data[16]..inTAG.SEG[x].data[17], 16)/100)
                    -- reader-id who wrote last transaction
-                   rid=tonumber(inTAG.SEG[sel].data[18]..inTAG.SEG[sel].data[19]..inTAG.SEG[sel].data[20], 16)
+                   rid=tonumber(inTAG.SEG[x].data[18]..inTAG.SEG[x].data[19]..inTAG.SEG[x].data[20], 16)
                    -- transaction counter value
-                   tcv=tonumber(inTAG.SEG[sel].data[29], 16)
+                   tcv=tonumber(inTAG.SEG[x].data[29], 16)
                    print("Currency:\t\t "..curr)
                    print("Limit:\t\t\t "..limit)
                    print("Balance:\t\t "..balance)
                    print("Transaction Counter:\t "..tcv)
                    print("Reader-ID:\t\t "..rid.."\n--------------------------------\n")
                  end
-               end 
+                 --end 
               end,
     ["df"] = function(x)
                 actions["lf"](x)
@@ -1448,8 +1475,14 @@ function modifyMode()
                 print(res)
               end,
     ["d3p"] = function(x)
-                if(type(x)=="string" and string.len(x)>=2) then x=tonumber(x, 10)
-                  else x=selectSegment(inTAG) end
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                -- if segment index was user defined
+                if (type(x)=="string" and string.len(x)>0) then 
+                  x=tonumber(x,10)
+                  print(string.format("User-Selected Index %02d", x))
+                -- or try to find match
+                else x=autoSelectSegment(inTAG, "3rdparty") end
+                  
                 if (istable(inTAG) and istable(inTAG.SEG[x]) and inTAG.SEG[x].len == 100) then
                   uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
                   if (check43rdPartyCash1(uid, inTAG.SEG[x].data)) then
@@ -1458,69 +1491,119 @@ function modifyMode()
                 end
               end,
     ["r3p"] = function(x)
-                if (string.len(x)>0) then actions['lf']('legic_dumps/'..x) end
-                if (istable(inTAG) and istable(inTAG.SEG[1]) and inTAG.SEG[1].len == 100) then
-                  local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
-                  if (check43rdPartyCash1(uid, inTAG.SEG[1].data)) then
-                    -- raw/unknown data 
-                    print("\n\t\tStamp  :  "..dumpTable(inTAG.SEG[1].data, "", 0 , 2))
-                    print("\t\tBlock 0:  "..dumpTable(inTAG.SEG[1].data, "", 3 , 18))
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                -- if segment index was user defined
+                if (type(x)=="string" and string.len(x)>0) then 
+                  x=tonumber(x,10)
+                  print(string.format("User-Selected Index %02d", x))
+                -- or try to find match
+                else x=autoSelectSegment(inTAG, "3rdparty") end
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                if (istable(inTAG.SEG[x])) then
+                    print("\n\t\tStamp  :  "..dumpTable(inTAG.SEG[x].data, "", 0 , 2))
+                    print("\t\tBlock 0:  "..dumpTable(inTAG.SEG[x].data, "", 3 , 18))
                     print()
-                    print("\t\tBlock 1:  "..dumpTable(inTAG.SEG[1].data, "", 19, 30))
-                    print("checksum 1: Tag-ID .. Block 1 => LegicCrc8 = "..inTAG.SEG[1].data[31])
+                    print("\t\tBlock 1:  "..dumpTable(inTAG.SEG[x].data, "", 19, 30))
+                    print("checksum 1: Tag-ID .. Block 1 => LegicCrc8 = "..inTAG.SEG[x].data[31].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 19, 30)), inTAG.SEG[x].data[31])..")")
                     print()
-                    print("\t\tBlock 2:  "..dumpTable(inTAG.SEG[1].data, "", 32, 33))
-                    print("checksum 2: Block 2 => LegicCrc8 = "..inTAG.SEG[1].data[34])
+                    print("\t\tBlock 2:  "..dumpTable(inTAG.SEG[x].data, "", 32, 33))
+                    print("checksum 2: Block 2 => LegicCrc8 = "..inTAG.SEG[x].data[34].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 32, 33)), inTAG.SEG[x].data[34])..")")
                     print()
-                    print("\t\tBlock 3:  "..dumpTable(inTAG.SEG[1].data, "", 35, 36))
-                    print("checksum 3: Block 3 => LegicCrc8 = "..inTAG.SEG[1].data[37])
+                    print("\t\tBlock 3:  "..dumpTable(inTAG.SEG[x].data, "", 35, 36))
+                    print("checksum 3: Block 3 => LegicCrc8 = "..inTAG.SEG[x].data[37].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 35, 36)), inTAG.SEG[x].data[37])..")")
                     print()
-                    print("\t\tyet unknown: "..inTAG.SEG[1].data[38])
+                    print("\t\tyet unknown: "..inTAG.SEG[x].data[38])
                     print()
-                    print("\t\tHisatory 1:  "..dumpTable(inTAG.SEG[1].data, "", 39, 40))  
-                    print("\t\tHisatory 2:  "..dumpTable(inTAG.SEG[1].data, "", 41, 42))  
-                    print("\t\tHisatory 3:  "..dumpTable(inTAG.SEG[1].data, "", 43, 44))   
+                    print("\t\tHisatory 1:  "..dumpTable(inTAG.SEG[x].data, "", 39, 40))  
+                    print("\t\tHisatory 2:  "..dumpTable(inTAG.SEG[x].data, "", 41, 42))  
+                    print("\t\tHisatory 3:  "..dumpTable(inTAG.SEG[x].data, "", 43, 44))   
                     print()
-                    print("\t\tyet unknown: "..inTAG.SEG[1].data[45])         
+                    print("\t\tyet unknown: "..inTAG.SEG[x].data[45])         
                     print()
-                    print("\t\tKGH-UID HEX:  "..dumpTable(inTAG.SEG[1].data, "", 46, 48))
-                    print("\t\tBlock 4:  "..dumpTable(inTAG.SEG[1].data, "", 49, 54))
-                    print("checksum 4: Tag-ID .. KGH-UID .. Block 4 => LegicCrc8 = "..inTAG.SEG[1].data[55])
+                    print("\t\tKGH-UID HEX:  "..dumpTable(inTAG.SEG[x].data, "", 46, 48))
+                    print("\t\tBlock 4:  "..dumpTable(inTAG.SEG[x].data, "", 49, 54))
+                    print("checksum 4: Tag-ID .. KGH-UID .. Block 4 => LegicCrc8 = "..inTAG.SEG[x].data[55].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 46, 54)), inTAG.SEG[x].data[55])..")")
                     print()
-                    print("\t\tBlock 5:  "..dumpTable(inTAG.SEG[1].data, "", 56, 61))
-                    print("checksum 5: Tag-ID .. Block 5 => LegicCrc8 = "..inTAG.SEG[1].data[62])
+                    print("\t\tBlock 5:  "..dumpTable(inTAG.SEG[x].data, "", 56, 61))
+                    print("checksum 5: Tag-ID .. Block 5 => LegicCrc8 = "..inTAG.SEG[x].data[62].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 56, 61)), inTAG.SEG[x].data[62])..")")
                     print()
-                    print("\t\tBlock 6:  "..dumpTable(inTAG.SEG[1].data, "", 63, 72))
-                    print("checksum 6: Tag-ID .. Block 6 => LegicCrc8 = "..inTAG.SEG[1].data[73])
+                    print("\t\tBlock 6:  "..dumpTable(inTAG.SEG[x].data, "", 63, 72))
+                    print("checksum 6: Tag-ID .. Block 6 => LegicCrc8 = "..inTAG.SEG[x].data[73].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 63, 72)), inTAG.SEG[x].data[73])..")")
                     print()
-                    print("\t\tBlock 7:  "..dumpTable(inTAG.SEG[1].data, "", 74, 88))
-                    print("checksum 7: Tag-ID .. Block 7 => LegicCrc8 = "..inTAG.SEG[1].data[89])
+                    print("\t\tBlock 7:  "..dumpTable(inTAG.SEG[x].data, "", 74, 88))
+                    print("checksum 7: Tag-ID .. Block 7 => LegicCrc8 = "..inTAG.SEG[x].data[89].." ("..compareCrc(utils.Crc8Legic(uid..dumpTable(inTAG.SEG[x].data, "", 74, 88)), inTAG.SEG[x].data[89])..")")
                     print()
-                    print("\t\tBlock 8:  "..dumpTable(inTAG.SEG[1].data, "", 90, 94))
-                 end 
-                end
+                    print("\t\tBlock 8:  "..dumpTable(inTAG.SEG[x].data, "", 90, 94))
+                 end
               end,
-    ["e3p"] = function(x)
-                x=selectSegment(inTAG)
+    ["e3p"] = function(x) 
+                local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                -- if segment index was user defined
+                if (type(x)=="string" and string.len(x)>0) then 
+                  x=tonumber(x,10)
+                  print(string.format("User-Selected Index %02d", x))
+                -- or try to find match
+                else x=autoSelectSegment(inTAG, "3rdparty") end
+                  
                 if (istable(inTAG) and istable(inTAG.SEG[x]) and inTAG.SEG[x].len == 100) then
-                  uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
-                  if (check43rdPartyCash1(uid, inTAG.SEG[x].data)) then
+                  --if (check43rdPartyCash1(uid, inTAG.SEG[x].data)) then
+                    -- change Balance
                     if (confirm("\nedit Balance?")) then
                       local new_cash=input("enter new Balance without comma or currency", "100")
                       inTAG.SEG[x].data=edit3rdCash(new_cash, uid, inTAG.SEG[x].data)
                     end
-                    if (confirm("\nedit User-ID?")) then
-                      local new_mapid=input("enter new UID s 6-digit hex or dec", "000000")
+                    -- change User-ID (used for online-account-mapping)
+                    if (confirm("\nedit UserID-Mapping?")) then
+                      local new_mapid=input("enter new UserID (6-digit value)", "012345")
                       inTAG.SEG[x].data=edit3rdUid(new_mapid, uid, inTAG.SEG[x].data)
                     end
+                    if (confirm("\nedit Stamp?")) then
+                      local new_stamp=input("enter new Stamp", getSegmentStamp(inTAG.SEG[x]))
+                      inTAG.SEG[x].data=editStamp(new_stamp, uid, inTAG.SEG[x].data)
+                      new_stamp=getSegmentStamp(inTAG.SEG[x], 'true')
+                      print("stamp_bytes: "..#new_stamp)
+                      -- replace stamp in 'block 1' also
+                      io.write("editing stamp in Block 1 also ")
+                      for i=20, (20+#new_stamp-1) do
+                        inTAG.SEG[x].data[i]=new_stamp[i-19]
+                        io.write(".");
+                      end
+                      print(" done")
+                      -- fix known checksums
+                      inTAG.SEG[x].data=fix3rdPartyCash1(uid, inTAG.SEG[x].data)
+                    end
+                    
+                    -- print out new settings
                     dump3rdPartyCash1(inTAG, x)
-                  end
+                    --end
                 end
+              end,
+    ["gs"] = function(x)
+                if(type(x)=="string" and string.len(x)>=2) then x=tonumber(x, 10)
+                else x=selectSegment(inTAG) end
+                local stamp=getSegmentStamp(inTAG.SEG[x])
+                print("Stamp : "..stamp)
+                stamp=str2bytes(stamp)
+                print("lenght: "..#stamp)
               end,
     ["c6"] = function(x) local crc16=string.format("%4.04x", utils.Crc16(x)) 
                   print(string.sub(crc16, 0,2).." "..string.sub(crc16, 3,4))
               end,
     ["cc"] = function(x) if (istable(inTAG)) then checkAllSegCrc(inTAG) end end,
+    ["cb"] = function(x) 
+                if (istable(inTAG)) then
+                  print("purge BackupArea")
+                  inTAG=clearBackupArea(inTAG) 
+                end 
+             end, 
+   ["f3p"] = function(x) 
+               if(type(x)=="string" and string.len(x)>=2) then x=tonumber(x, 10)
+               else x=selectSegment(inTAG) end
+               if (istable(inTAG.SEG[x])) then 
+                  local uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
+                  inTAG.SEG[x].data=fix3rdPartyCash1(uid, inTAG.SEG[x].data)
+               end 
+              end,
     ["ck"] = function(x) if (istable(inTAG)) then checkAllKghCrc(inTAG) end end,
   }
   print("modify-modus! enter 'h' for help or 'q' to quit")
@@ -1537,12 +1620,92 @@ function modifyMode()
   until (string.sub(ic,0,1)=="q")
 end
 
+function clearBackupArea(tag)
+  for i=1, #tag.Bck do
+    tag.Bck[i]='00'
+  end
+  return tag
+end
+
+function getSegmentStamp(seg, bytes)
+  local stamp=""
+  local stamp_len=7
+  --- the 'real' stamp on MIM is not really easy to tell for me since the 'data-block' covers stamp0..stampn+data0..datan
+  -- there a no stamps longer than 7 bytes & they are write-protected by default , and I have not seen user-credntials 
+  -- with stamps smaller 3 bytes (except: Master-Token)
+  -- WRP -> Read/Write Protection 
+  -- WRC -> Read/Write Condition
+  -- RD depends on WRC - if WRC > 0 and RD=1: only reader with matching #WRC of Stamp-bytes in thier Database have Read-Access to the Tag
+  if (seg.WRP<7) then stamp_len=(seg.WRP) end
+  for i=1, (stamp_len) do
+    stamp=stamp..seg.data[i-1]
+  end
+  if (bytes) then 
+    stamp=str2bytes(stamp)
+    return stamp
+  else return stamp end
+end
+
+function str2bytes(s)
+  local res={}
+  if (string.len(s)%2~=0) then return print("stamp should be a even hexstring e.g.: deadbeef or 0badc0de") end
+  for i=1, string.len(s), 2 do
+    table.insert(res, string.sub(s,i,(i+1)))
+  end
+  return res
+end
+
+function editStamp(new_stamp, uid, data)
+  local stamp=str2bytes(new_stamp)
+  for i=0, #stamp-1 do
+    data[i]=stamp[i+1]
+  end
+  -- now fill in stamp
+  for i=0, (string.len(new_stamp)/2)-1 do
+      data[i]=stamp[i+1]
+  end
+  return fix3rdPartyCash1(uid, data)
+end
+
+function autoSelectSegment(tag, s)
+  local uid=tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
+  local x=#tag.SEG+1
+  local res = false
+  io.write("autoSelect ")
+  --- search for desired segment-type
+  -- 3rd Party Segment
+  if (s=="3rdparty") then
+    repeat 
+      io.write(". ")
+      x=x-1
+      res=check43rdPartyCash1(uid, tag.SEG[x].data)
+    until ( res or x==0 )
+   end  
+  -- Legic-Cash Segment
+  if (s=="legiccash") then
+    repeat 
+      io.write(". ")
+      x=x-1
+      res=check4LegicCash(tag.SEG[x].data)
+    until ( res or x==0 )
+   end
+   ---
+   -- segment found
+   if (res) then
+     io.write("\nautoselected Index: "..string.format("%02d", x).."\n")
+     return x
+   end
+   ---
+   -- nothing found   
+   io.write("no Segment found\n") 
+   return -1 
+end
 
 --- main function
 function main(args)
 	if (#args == 0 ) then modifyMode() end
   --- variables
-  local inTAG, outTAG, outfile, interactive, crc, ofs, cfs, dfs
+  local inTAG, backupTAG, outTAG, outfile, interactive, crc, ofs, cfs, dfs
 	-- just a spacer for better readability
   print()
   --- parse arguments
@@ -1591,6 +1754,25 @@ function main(args)
     end
   end
   
+end
+
+-- Creates a complete/deep copy of the data
+function deepCopy(object)
+    local lookup_table = {}
+    local function _copy(object)
+        if type(object) ~= "table" then
+            return object
+        elseif lookup_table[object] then
+            return lookup_table[object]
+        end
+        local new_table = {}
+        lookup_table[object] = new_table
+        for index, value in pairs(object) do
+            new_table[_copy(index)] = _copy(value)
+        end
+        return setmetatable(new_table, getmetatable(object))
+    end
+    return _copy(object)
 end
 
 --- start
