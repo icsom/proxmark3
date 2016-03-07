@@ -113,6 +113,7 @@ currentTag="inTAG"
 -- requirements
 local utils   = require('utils')
 local getopt  = require('getopt')
+local getopt  = require('ansicolors')
 
 --- 
 -- global variables / defines
@@ -280,7 +281,7 @@ end
 -- write virtual Tag to real Tag
 function writeToTag(plainBytes, taglen, filename)
   local bytes
-	if(utils.confirm("\nplace your empty tag onto the PM3 to read & write\n") == false) then
+	if(utils.confirm(ansicolors.yellow.."\nplace your empty tag onto the PM3 to read & write\n"..ansicolors.reset) == false) then
     return
   end
 	
@@ -305,7 +306,7 @@ function writeToTag(plainBytes, taglen, filename)
 				core.console(cmd)
         --print(cmd)
 			else
-				print("skipping byte 0x05 - will be written next step")
+				print(ansicolors.red.."skipping byte 0x05 - will be written next step"..ansicolors.reset)
 			end				
 			utils.Sleep(0.2)
 		end
@@ -381,10 +382,10 @@ function bytesToTag(bytes, tag)
     tag.Bck=bytesToTable(bytes, 14, 20)
     tag.MTC=bytesToTable(bytes, 21, 22)
     
-    print("Tag-Type: ".. tag.Type)
+    print(ansicolors.green.."Tag-Type: ".. tag.Type..ansicolors.reset)
     if (tag.Type=="SAM" and #bytes>23) then
       tag=segmentsToTag(bytes, tag)
-      print((#tag.SEG+1).." Segment(s) found")
+      print(ansicolors.green..(#tag.SEG+1).." Segment(s) found"..ansicolors.reset)
     -- unsegmented Master-Token
     -- only tag-data 
     else 
@@ -577,11 +578,11 @@ function dumpTag(tag)
   local dp=0
   local raw=""
   -- sytstem area
-  res ="\nCDF: System Area"
+  res =ansicolors.yellow.."\nCDF: System Area"..ansicolors.reset
   res= res.."\n"..dumpCDF(tag)
   -- segments (user-token area)
   if(tag.Type=="SAM") then
-    res = res.."\n\nADF: User Area"
+    res = res..ansicolors.yellow.."\n\nADF: User Area"..ansicolors.reset
     for i=0, #tag.SEG do
       res=res.."\n"..dumpSegment(tag, i).."\n"
     end
@@ -776,22 +777,23 @@ function dumpSegment(tag, index)
     res = res .."raw header:"..string.sub(raw,0,-2)..", flag="..tag.SEG[i].flag..", (valid="..("%x"):format(tag.SEG[i].valid)..", last="..("%x"):format(tag.SEG[i].last).."), "
     res = res .."len="..("%04d"):format(tag.SEG[i].len)..", WRP="..("%02x"):format(tag.SEG[i].WRP)..", WRC="..("%02x"):format(tag.SEG[i].WRC)..", "
     res = res .."RD="..("%02x"):format(tag.SEG[i].RD)..", CRC="..tag.SEG[i].crc.." "
-    res = res .."("..(checkSegmentCrc(tag, i) and "valid" or "error")..")"
+    res = res .."("..(checkSegmentCrc(tag, i) and ansicolors.green.."valid" or ansicolors.red.."error") ..ansicolors.reset..")"
     raw=""
+    
 
     -- WRC protected
-    if (tag.SEG[i].WRC>0) then
+    if ((tag.SEG[i].WRC>0)) then
       res = res .."\nWRC protected area:\n"
-      for i2=dp, tag.SEG[i].WRC-1 do
+      for i2=dp, dp+tag.SEG[i].WRC-1 do
         res = res..tag.SEG[i].data[dp].." "
         dp=dp+1
       end
     end
     
     -- WRP mprotected
-    if ((tag.SEG[i].WRP-tag.SEG[i].WRC)>0) then
+    if (tag.SEG[i].WRP>tag.SEG[i].WRC) then
       res = res .."\nRemaining write protected area:\n"
-      for i2=dp, (tag.SEG[i].WRP-tag.SEG[i].WRC)-1 do
+      for i2=dp, dp+(tag.SEG[i].WRP-tag.SEG[i].WRC)-1 do
         res = res..tag.SEG[i].data[dp].." "
         dp=dp+1
       end
@@ -805,7 +807,7 @@ function dumpSegment(tag, index)
        dp=dp+1
      end
      if (tag.SEG[i].kgh) then 
-       res = res..tag.SEG[i].data[dp].." (KGH: "..(checkKghCrc(tag, i) and "valid" or "error")..")"
+       res = res..tag.SEG[i].data[dp].." (KGH: "..(checkKghCrc(tag, i) and ansicolors.green.."valid" or ansicolors.red.."error") ..ansicolors.reset..")"
      else  res = res..tag.SEG[i].data[dp] end
     end
     dp=0
@@ -940,6 +942,7 @@ function dumpTable(tab, header, tstart, tend)
   else return (header.." #"..(tend-tstart+1).."\n"..res) end
 end
 
+
 function dump3rdPartyCash1(tag , seg)
   local uid=tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
   local stamp=tag.SEG[seg].data[0].." "..tag.SEG[seg].data[1].." "..tag.SEG[seg].data[2]
@@ -976,20 +979,21 @@ function dump3rdPartyCash1(tag , seg)
   print(string.format("History 3:\t\t  %3.2f", lastbal2/100))        
   print("------------------------------\n") 
 end
+
 ---
 -- compare two bytes
 function compareCrc(calc, guess)
   calc=("%02x"):format(calc)
-  if (calc==guess) then return "valid"
-  else return "error "..calc.."!="..guess end
+  if (calc==guess) then return ansicolors.green.."valid"..ansicolors.reset
+  else return ansicolors.red.."error "..ansicolors.reset..calc.."!="..guess end
 end
 
 ---
 -- compare 4 bytes
 function compareCrc16(calc, guess)
   calc=("%04x"):format(calc)
-  if (calc==guess) then return "valid"
-  else return "error "..calc.."!="..guess end
+  if (calc==guess) then return ansicolors.green.."valid"..ansicolors.reset
+  else return ansicolors.red.."error "..ansicolors.reset..calc.."!="..guess end
 end
 
 ---
@@ -1068,12 +1072,12 @@ end
 function check43rdPartyCash1(uid, data)
   if(#data==95) then
     -- too explicit checking will avoid fixing ;-)
-    if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 19, 30)), data[31])=="valid") then
+    if (string.find(compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 19, 30)), data[31]),"valid")) then
       --if (compareCrc(utils.Crc8Legic(uid..data[32]..data[33]), data[34])=="valid") then
         --if (compareCrc(utils.Crc8Legic(uid..data[35]..data[36]), data[37])=="valid") then
          --if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 56, 61)), data[62])=="valid") then
             --if (compareCrc(utils.Crc8Legic(uid..dumpTable(data, "", 74, 88)), data[89])=="valid") then
-              io.write("3rd Party Cash-Segment detected ")
+              io.write(ansicolors.green.."3rd Party Cash-Segment detected "..ansicolors.reset)
               return true
               --end
           --end
@@ -1097,7 +1101,7 @@ function check4LegicCash(data)
       if (("%04x"):format(utils.Crc16(dumpTable(data, "", 0, 12))) == data[13]..data[14]) then
         if (("%04x"):format(utils.Crc16(dumpTable(data, "", 15, 20))) == data[21]..data[22]) then
           if (("%04x"):format(utils.Crc16(dumpTable(data, "", 23, 29))) == data[30]..data[31]) then
-            io.write("Legic-Cash Segment detected ")
+            io.write(ansicolors.green.."Legic-Cash Segment detected "..ansicolors.reset)
             return true
           end
         end
@@ -1127,7 +1131,7 @@ function checkAllSegCrc(tag)
       crc=calcSegmentCrc(tag, i)
       tag.SEG[i].crc=crc
     end
-    else return print("Matser-Token / unsegmented Tag") end
+    else return print(ansicolors.yellow.."Master-Token / unsegmented Tag"..ansicolors.reset) end
 end
 
 ---
@@ -1167,7 +1171,7 @@ function checkKghCrc(tag, segid)
       local data=kghCrcCredentials(tag, segid)
       if (("%02x"):format(utils.Crc8Legic(data))==tag.SEG[segid].data[tag.SEG[segid].len-5-1]) then return true; end 
       else return false; end
-  else oops("'Kaba Group header' detected but no Segment-Data found") end
+  else oops(ansicolors.red.."'Kaba Group header' detected but no Segment-Data found"..ansocolors.reset) end
 end
 
 ---
@@ -1188,7 +1192,7 @@ function segmentCrcCredentials(tag, segid)
     local cred = tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
     cred = cred ..tag.SEG[segid].raw[1]..tag.SEG[segid].raw[2]..tag.SEG[segid].raw[3]..tag.SEG[segid].raw[4]
     return cred
-    else return print("Master-Token / unsegmented Tag!") end
+    else return print(ansicolors.yellow.."Master-Token / unsegmented Tag!"..ansicolors.reset) end
 end
 
 ---
@@ -1222,13 +1226,14 @@ function modifyHelp()
   wt => write   Tag             es => edit   Segment Header     et => edit Token data 
   ct => copy io Tag             ed => edit   Segment Data       tk => toggle KGH-Flag
   tc => copy oi Tag             rs => remove Segment           
-                                cc => check  Segment-CRC            File I/O      
+  tt => toggle  Tag             cc => check  Segment-CRC            File I/O      
   di => dump  inTag             ck => check  KGH                -----------------  
-  do => dump  outTag                                            lf => load   File 
-  ds => dump  Segments                                          sf => save   File 
-  lc => dump  Legic-Cash                                        xf => xor to File
+  do => dump  outTag           e3p => edit   3rd Party Cash     lf => load   File 
+  ds => dump  Segment                                           sf => save   File 
+ dlc => dump  Legic-Cash                                        xf => xor to File
  d3p => dump  3rd Party Cash                                        
- r3p => raw   3rd Party Cash   
+ r3p => raw   3rd Party Cash                                        
+    
                            
                                       q => quit
   ]]                      
@@ -1244,7 +1249,7 @@ function modifyMode()
   actions = {
      ["h"] = function(x) 
               print("  Version: "..version); 
-              print(modifyHelp().."\n".."tags im Memory: "..(istable(inTAG) and ((currentTag=='inTAG') and "*mainTAG" or "mainTAG") or "").."  "..(istable(backupTAG) and ((currentTag=='backupTAG') and "*backupTAG" or "backupTAG") or ""))
+              print(modifyHelp().."\n".."tags im Memory: "..(istable(inTAG) and ((currentTag=='inTAG') and ansicolors.green.."*mainTAG"..ansicolors.reset or "mainTAG") or "").."  "..(istable(backupTAG) and ((currentTag=='backupTAG') and ansicolors.green.."*backupTAG"..ansicolors.reset or "backupTAG") or ""))
             end,
     ["rt"] = function(x) 
                 inTAG=readFromPM3(); 
@@ -1278,7 +1283,7 @@ function modifyMode()
                     if (check43rdPartyCash1(uid_old, inTAG.SEG[i].data)) then
                       io.write(" - fixing known checksums ... ")
                       inTAG.SEG[i].data=fix3rdPartyCash1(uid_new, inTAG.SEG[i].data)
-                      io.write(" done\n")
+                      io.write(ansicolors.green.." done\n"..ansicolors.reset)
                     end
                   end
                 end
@@ -1306,7 +1311,7 @@ function modifyMode()
                 inTAG=deepCopy(backupTAG)
             end,
     ["tt"] = function(x)  
-                print("toggle to "..((currentTag=='inTAG') and "backupTAG" or "mainTAG"))
+                print("toggle to "..ansicolors.green..((currentTag=='inTAG') and "backupTAG" or "mainTAG")..ansicolors.reset)
                 if(currentTag=="inTAG") then
                   outTAG=deepCopy(inTAG)
                   inTAG=deepCopy(backupTAG)
@@ -1349,7 +1354,8 @@ function modifyMode()
                   if(istable(inTAG.SEG[0])) then
                     for i=0, #inTAG.SEG do
                       if(check43rdPartyCash1(uid, inTAG.SEG[i].data)) then
-                        io.write("in Segment index: "..inTAG.SEG[i].index.."\n")
+                        io.write("in Segment index: "..inTAG.SEG[i].index .. "\n")
+                        
                       elseif(check4LegicCash(inTAG.SEG[i].data)) then
                         io.write("in Segment index: "..inTAG.SEG[i].index.."\n")
                         lc=true; 
@@ -1358,14 +1364,14 @@ function modifyMode()
                     end
                   end
                   print("\n"..dumpTag(inTAG).."\n") 
-                  if (lc) then actions["dlc"](lci) end
+                  --if (lc) then actions["dlc"](lci) end
                 end 
               end,
     ["do"] = function(x) if (istable(backupTAG)) then print("\n"..dumpTag(backupTAG).."\n") end end,
     ["ds"] = function(x) 
                 if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
                 else sel=selectSegment(inTAG) end
-                if (sel) then print("\n"..(dumpSegment(inTAG, sel) or "no Segments available").."\n") end 
+                if (sel) then print("\n"..(dumpSegment(inTAG, sel) or ansicolors.red.."no Segments available") ..ansicolors.reset.."\n") end 
               end,
     ["es"] = function(x) 
               if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
@@ -1374,7 +1380,7 @@ function modifyMode()
                 if(istable(inTAG.SEG[0])) then
                   inTAG=editSegment(inTAG, sel)
                   inTAG.SEG[sel]=regenSegmentHeader(inTAG.SEG[sel])
-              else print("no Segments in Tag") end 
+              else print(ansicolors.yellow.."no Segments in Tag"..ansicolors.reset) end 
               end
             end,
     ["as"] = function(x) 
@@ -1382,7 +1388,7 @@ function modifyMode()
                 inTAG=addSegment(inTAG)
                 inTAG.SEG[#inTAG.SEG-1]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG-1])
                 inTAG.SEG[#inTAG.SEG]=regenSegmentHeader(inTAG.SEG[#inTAG.SEG]) 
-                else print("Master-Token / unsegmented Tag!")
+                else print(ansicolors.yellow.."Master-Token / unsegmented Tag!"..ansicolors.reset)
               end
             end,
     ["rs"] = function(x) 
@@ -1398,7 +1404,7 @@ function modifyMode()
     ["ed"] = function(x) 
               if (type(x)=="string" and string.len(x)>0) then sel=tonumber(x,10)
               else sel=selectSegment(inTAG) end
-              if (sel) then 
+              if (istable(inTAG.SEG[sel])) then 
                 inTAG.SEG[sel].data=editSegmentData(inTAG.SEG[sel].data) 
               end
             end,
@@ -1697,7 +1703,7 @@ function autoSelectSegment(tag, s)
    end
    ---
    -- nothing found   
-   io.write("no Segment found\n") 
+   io.write(ansicolors.yellow.."no Segment found\n"..ansicolors.reset) 
    return -1 
 end
 
