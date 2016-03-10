@@ -338,7 +338,6 @@ function saveTagMap(map, filename)
         end
 		end
 	fho:close()
-	print("\nwrote ".. #bytes .." bytes to " .. filename)
 	return true
 end
 
@@ -354,7 +353,6 @@ local function split(str, sep)
     end
     return fields
 end
-
 
 ---
 -- read map-file into map
@@ -377,7 +375,7 @@ function loadTagMap(filename)
   		if (#fields==2) then 
         -- map-name
         map[fields[1]]=fields[2] 
-      elseif (#fields==5) then
+      elseif (fields[1]=='mappings' and #fields==5) then
         m=m+1
         -- mapping
         local temp={}
@@ -393,11 +391,12 @@ function loadTagMap(filename)
 end
 
 ---
--- dump tagMap
+-- dump tagMap (mappings only)
 function dumpTagMap(tag, tagMap)
   if(#tagMap.mappings>0) then
     bytes=tagToBytes(tag)
     local temp
+    -- start display mappings
     for k, v in pairs(tagMap.mappings) do
       io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acyellow..v['name']..acoff..":")
       temp=""
@@ -409,6 +408,7 @@ function dumpTagMap(tag, tagMap)
       end
       print(temp)
     end
+    --  end display-mappings
   end
 end
 
@@ -1513,6 +1513,36 @@ function editLegicCash(data)
 end
 
 ---
+-- edit 3rd-party cash
+function edit3rdPartyCash1(tag, x)
+   local uid=tag.MCD..tag.MSN0..tag.MSN1..tag.MSN2
+  if (confirm("\nedit Balance?")) then
+    local new_cash=input("enter new Balance≤\nwithout comma and without currency-sign! (0-65535)", "100")
+    tag.SEG[x].data=edit3rdCash(new_cash, uid, tag.SEG[x].data)
+  end
+  -- change User-ID (used for online-account-mapping)
+  if (confirm("\nedit UserID-Mapping?")) then
+    local new_mapid=input("enter new UserID (6-digit value)", "012345")
+    tag.SEG[x].data=edit3rdUid(new_mapid, uid, tag.SEG[x].data)
+  end
+  if (confirm("\nedit Stamp?")) then
+    local new_stamp=input("enter new Stamp", getSegmentStamp(tag.SEG[x]))
+    tag.SEG[x].data=editStamp(new_stamp, uid, tag.SEG[x].data)
+    new_stamp=getSegmentStamp(tag.SEG[x], 'true')
+    print("stamp_bytes: "..#new_stamp)
+    -- replace stamp in 'block 1' also
+    io.write("editing stamp in Block 1 also ")
+    for i=20, (20+#new_stamp-1) do
+      tag.SEG[x].data[i]=new_stamp[i-19]
+      io.write(".");
+    end
+    print(" done")
+    -- fix known checksums
+    tag.SEG[x].data=fix3rdPartyCash1(uid, tag.SEG[x].data)
+  end    
+  return tag  
+end
+---
 -- chack for signature of a '3rd Party Cash-Segment' - not all bytes know until yet !!
 function check43rdPartyCash1(uid, data)
   if(#data==95) then
@@ -1763,8 +1793,7 @@ function modifyMode()
                   if(istable(inTAG.SEG[0])) then
                     for i=0, #inTAG.SEG do
                       if(check43rdPartyCash1(uid, inTAG.SEG[i].data)) then
-                        io.write(accyan.."in Segment index: "..inTAG.SEG[i].index ..acoff.. "\n")
-                        
+                        io.write(accyan.."in Segment index: "..inTAG.SEG[i].index ..acoff.. "\n")                      
                       elseif(check4LegicCash(inTAG.SEG[i].data)) then
                         io.write(accyan.."in Segment index: "..inTAG.SEG[i].index..acoff.."\n")
                         lc=true; 
@@ -1810,8 +1839,7 @@ function modifyMode()
     -- edit a tagMap
     ["em"] = function(x) 
                 if (istable(inTAG)) then 
-                  if (istable(tagMap)) then
-                    
+                  if (istable(tagMap)) then                
                     print(accyan.."Map "..acoff..tagMap.name..accyan.." contains "..acoff..#tagMap.mappings..accyan.." mappings"..acoff)
                     -- edit
                     if(#tagMap.mappings>0) then
@@ -1994,8 +2022,7 @@ function modifyMode()
                   x=tonumber(x,10)
                   print(string.format("User-Selected Index %02d", x))
                 -- or try to find match
-                else x=autoSelectSegment(inTAG, "3rdparty") end
-                  
+                else x=autoSelectSegment(inTAG, "3rdparty") end                  
                 if (istable(inTAG) and istable(inTAG.SEG[x]) and inTAG.SEG[x].len == 100) then
                   uid=inTAG.MCD..inTAG.MSN0..inTAG.MSN1..inTAG.MSN2
                   if (check43rdPartyCash1(uid, inTAG.SEG[x].data)) then
@@ -2024,35 +2051,9 @@ function modifyMode()
                   x=tonumber(x,10)
                   print(string.format("User-Selected Index %02d", x))
                 -- or try to find match
-                else x=autoSelectSegment(inTAG, "3rdparty") end
-                  
+                else x=autoSelectSegment(inTAG, "3rdparty") end                 
                 if (istable(inTAG) and istable(inTAG.SEG[x]) and inTAG.SEG[x].len == 100) then
-                    -- change Balance
-                    if (confirm("\nedit Balance?")) then
-                      local new_cash=input("enter new Balance≤\nwithout comma and without currency-sign! (0-65535)", "100")
-                      inTAG.SEG[x].data=edit3rdCash(new_cash, uid, inTAG.SEG[x].data)
-                    end
-                    -- change User-ID (used for online-account-mapping)
-                    if (confirm("\nedit UserID-Mapping?")) then
-                      local new_mapid=input("enter new UserID (6-digit value)", "012345")
-                      inTAG.SEG[x].data=edit3rdUid(new_mapid, uid, inTAG.SEG[x].data)
-                    end
-                    if (confirm("\nedit Stamp?")) then
-                      local new_stamp=input("enter new Stamp", getSegmentStamp(inTAG.SEG[x]))
-                      inTAG.SEG[x].data=editStamp(new_stamp, uid, inTAG.SEG[x].data)
-                      new_stamp=getSegmentStamp(inTAG.SEG[x], 'true')
-                      print("stamp_bytes: "..#new_stamp)
-                      -- replace stamp in 'block 1' also
-                      io.write("editing stamp in Block 1 also ")
-                      for i=20, (20+#new_stamp-1) do
-                        inTAG.SEG[x].data[i]=new_stamp[i-19]
-                        io.write(".");
-                      end
-                      print(" done")
-                      -- fix known checksums
-                      inTAG.SEG[x].data=fix3rdPartyCash1(uid, inTAG.SEG[x].data)
-                    end      
-                    -- print out new settings
+                  inTAG=edit3rdPartyCash1(inTAG, x)
                     dump3rdPartyCash1(inTAG, x)
                 end
               end,
