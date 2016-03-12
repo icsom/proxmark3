@@ -56,7 +56,7 @@ CHK = crc16 over SHD + LRS + CV
 
 example = "script run legic"
 author  = "Mosci"
-version = "1.0.2"
+version = "1.0.3"
 
 desc =
 [[
@@ -772,8 +772,11 @@ end
 -- edit existing Map
 function editTagMap(tag, tagMap)
   local t = [[
+  
+'em' sub-Menu
 d = dump    a = add   r = remove     mas = map all segments
 e = edit    t = cmd   c = crc         dm = dump mapped bytes
+                    q = exit sub-Menu
   ]]
   --if(#tagMap.mappings==0) then oops("no mappings in tagMap"); return tagMap end
   print("tagMap edit-mode")
@@ -788,7 +791,7 @@ e = edit    t = cmd   c = crc         dm = dump mapped bytes
       elseif  (type(actions[string.sub(x, 3)])=='function') then actions[string.sub(x, 3)]()
       end
   until x=='q'
-  print("quit tagMap edit-mode")
+  print("exit sub-Menu")
   return tagMap
 end
 
@@ -1426,6 +1429,7 @@ function getSegmentStats(bytes)
   if (#sStats>0 ) then return sStats
   else return false; end
 end
+
 ---
 -- regenerate segment-header (after edit)
 function regenSegmentHeader(segment)
