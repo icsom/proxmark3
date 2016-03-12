@@ -1439,7 +1439,7 @@ function regenSegmentHeader(segment)
   -- WRP
   raw[3]=("%02x"):format(bbit("0x"..("%02x"):format(seg.WRP),0,8))
   -- WRC + RD
-  raw[4]=("%02x"):format(bbit("0x"..("%03x"):format(seg.WRC),4,3)..bbit("0x"..("%02x"):format(seg.RD*128),0,8))
+  raw[4]=("%02x"):format(tonumber((seg.WRC*16)+(seg.RD*128),10))
   -- flag
   seg.flag=string.sub(raw[2],0,1)
   --print(raw[1].." "..raw[2].." "..raw[3].." "..raw[4])
