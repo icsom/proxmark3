@@ -606,6 +606,22 @@ end
 
 --- Map related ---
 --- 
+-- make tagMap
+function makeTagMap()
+  local tagMap={}
+  if (#tagMap==0) then 
+    tagMap['name']=input(accyan.."enter Name for this Map: "..acoff , "newTagMap") 
+    tagMap['mappings']={}
+    tagMap['crc8']={}
+    -- insert fixed Tag-CRC
+    table.insert(tagMap.crc8, {cname='TAG-CRC', pos=5, seq={1, 4}})
+    tagMap['crc16']={}
+  end
+  print(accyan.."new tagMap created"..acoff)
+  return tagMap                  
+end 
+
+---
 -- save mapping to file
 function saveTagMap(map, filename)
   if (string.len(filename)>0) then
@@ -634,9 +650,8 @@ end
 ---
 -- read map-file into map
 function loadTagMap(filename)
-  local map={}
+  local map=makeTagMap()
   local m=0
-  map['mappings']={}
   local line, fields
 	if (file_check(filename)==false) then
 		return oops("input file: "..filename.." not found")
@@ -673,9 +688,21 @@ function dumpTagMap(tag, tagMap)
   if(#tagMap.mappings>0) then
     bytes=tagToBytes(tag)
     local temp
+    local lastend=0
     -- start display mappings
     for k, v in pairs(tagMap.mappings) do
-      io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acyellow..v['name']..acoff..":")
+      if ((lastend+1)<v['start']) then
+        print("...")
+      end
+      if (isPosCrc8(tagMap, v['start'])>0) then
+        if ( checkMapCrc8(tagMap, bytes, isPosCrc8(tagMap, v['start']) ) ) then
+          io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acgreen..v['name']..acoff..":")
+        else
+          io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acred..v['name']..acoff..":")
+        end
+      else
+        io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acyellow..v['name']..acoff..":")
+      end
       temp=""
       for i=((string.len(v['name']))/10), 2 do
         temp=temp.."\t"
@@ -684,23 +711,77 @@ function dumpTagMap(tag, tagMap)
         temp=temp..bytes[i].." "
       end
       print(temp)
+      lastend=v['end']
     end
     --  end display-mappings
+    if (#tagMap.crc8>0) then
+      for i=1, #tagMap.crc8 do
+        print("crc8 "..i.." => "..((checkMapCrc8(tagMap, bytes, i)) and "valid" or "error"))
+      end
+    end
   end
+end
+
+---
+--
+function isPosCrc8(tagMap, pos)
+  local res=0
+  if (#tagMap.crc8>0) then
+    for k, v in pairs(tagMap.crc8) do
+      if(v['pos']==pos) then res=k end
+    end
+  end
+  return res
+end
+---
+-- check mapped crc
+function checkMapCrc8(tagMap, bytes, n)
+  local res=false
+  if (#tagMap.crc8>0) then
+      if(istable(tagMap.crc8[n])) then
+        temp=""
+        for k2, v2 in pairs(tagMap.crc8[n]) do
+          if (istable(v2)) then
+            for x, v3 in pairs(v2) do
+              temp=temp..v3..((x%2==0) and "," or "-")
+            end
+          end
+        end
+        local seq=split(temp, ",")
+        local tempres=""
+        if(#seq>0) then
+          for ck, cv in pairs(seq) do
+            local cb=split(cv, '-')
+            for i=cb[1], cb[2] do
+              tempres=tempres..bytes[i]
+            end
+          end
+          --print(string.sub(temp,1,string.len(temp)-1).." => "..tempres)
+          tempres=("%02x"):format(utils.Crc8Legic(tempres))
+          if (bytes[tagMap.crc8[n]['pos']]==tempres) then
+            res=true
+          end
+        end
+        --print(bytes[tagMap.crc8[n]['pos']].." => "..tempres)
+      end
+  end
+  return res
 end
 
 ---
 -- edit existing Map
 function editTagMap(tag, tagMap)
   local t = [[
-d = dump    a = add   r = remove m=map all segments
-e = edit    c = cmd   f = function
+d = dump    a = add   r = remove     mas = map all segments
+e = edit    t = cmd   c = crc         dm = dump mapped bytes
   ]]
   --if(#tagMap.mappings==0) then oops("no mappings in tagMap"); return tagMap end
   print("tagMap edit-mode")
   repeat 
     x=input(t, 'q')
       if      (x=='d') then tagMmap=dumpTagMap(tag, tagMap)
+      elseif  (x=='dm') then tagMmap=dumpMap(tag, tagMap)
+      elseif  (x=='c') then tagMmap=dumpMap(tag, tagMap)
       elseif  (x=='a') then tagMap=addMapping(tag, tagMap)
       elseif  (x=='r') then tagMap=deleteMapping(tag, tagMap)
       elseif  (x=='mas') then tagMap=mapTag(tagMap); tagMap=mapAllSegments(tag, tagMap)
@@ -709,6 +790,69 @@ e = edit    c = cmd   f = function
   until x=='q'
   print("quit tagMap edit-mode")
   return tagMap
+end
+
+---
+-- dump raw mapped and unmapped
+function dumpMap(tag, tagMap)
+  local dstart=1
+  local dend, cnt
+  local bytes = tagToBytes(tag)
+  dend=tagMap.mappings[#tagMap.mappings]['end']
+    
+  for i=dstart, dend do
+    if (check4MappedByte(i, tagMap) and not check4MapCrc8(i, tagMap)) then io.write(""..acyellow)
+    elseif (check4MapCrc8(i, tagMap)) then 
+      if ( checkMapCrc8(tagMap, bytes, isPosCrc8(tagMap, i) ) ) then
+        io.write(""..acgreen)
+      else 
+        io.write(""..acred)
+      end
+    else 
+      io.write(""..acoff) 
+    end
+    io.write(bytes[i])
+    if (i%8==0) then io.write("\n") 
+      else io.write(" ") end
+  end
+  
+  io.write("\n"..acoff)
+end
+
+---
+-- check if byte-addr is a know crc
+function check4MapCrc8(addr, tagMap)
+  local res=false
+  for i=1, #tagMap.crc8 do
+    if (addr == tagMap.crc8[i]['pos']) then
+      res=true
+    end
+  end
+  return res
+end
+
+---
+-- check if byte-addr is a know crc
+function check4MapCrc16(addr, tagMap)
+  local res=false
+  for i=1, #tagMap.crc16 do
+    if (addr == tagMap.crc8[i]['pos']) then
+      res=true
+    end
+  end
+  return res
+end
+
+---
+-- check if byte is mapped or not
+function check4MappedByte(addr, tagMap)
+  local res=false
+  for _, v in pairs(tagMap.mappings) do
+    if (addr >= v['start'] and addr <= v['end'] ) then
+      res= true
+    end
+  end
+  return res
 end
 
 ---
@@ -730,7 +874,7 @@ function deleteMapping(tag, tagMap)
     local d = selectMapping(tagMap)
     if (type(d)=='number') then
       table.remove(tagMap.mappings, d)
-    else oops("type = "..type(d).." but type was 'number' expected!")
+    else oops("deleteMapping: got type = "..type(d).." - expected type = 'number'")
     end
   end
   --if(#tagMap.functions>0) then
@@ -742,7 +886,7 @@ end
 -- select a mapping from a tagmap
 function selectMapping(tagMap)
   for k, v in pairs(tagMap.mappings) do
-    print(accyan..k..acoff.." -> ("..string.format("%04d", v['start']).."-"..string.format("%04d", v['end'])..") "..accyan..v['name']..acoff)
+    print(accyan..k..acoff.."\t-> ("..string.format("%04d", v['start']).."-"..string.format("%04d", v['end'])..") "..accyan..v['name']..acoff)
   end
   local res = tonumber(input("enter number of mapping to remove:", 0), 10)
   if (istable(tagMap.mappings[res])) then
@@ -756,10 +900,30 @@ end
 -- map all segments
 function mapAllSegments(tag, tagMap)
   local bytes=tagToBytes(tag)
+  local WRP,WRC,WRPC
   segs=getSegmentStats(bytes)
   if (istable(segs)) then
     for k, v in pairs(segs) do
-      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']), v['start'], v['end'])
+  	  -- wrp (write proteted) = byte 2
+  	  WRP = tonumber(bytes[v['start']+2],16)
+  	  -- wrc (write control) - bit 4-6 of byte 3
+  	  WRC = tonumber(bbit("0x"..bytes[v['start']+3],4,3),16)
+      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." HDR", v['start'], v['start']+3)
+      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." CRC", v['start']+4, v['start']+4)
+      table.insert(tagMap.crc8, {name = 'Segment '..("%02d"):format(v['index']).." CRC", pos=v['start']+4, seq={1,4,v['start'],v['start']+3}} )
+      if(WRC>WRP) then 
+        WRPC=WRC
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1)
+      elseif (WRP>WRC and WRC>0) then
+        WRPC=WRP
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1)
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+WRC+5, v['start']+5+WRP-1)
+      else
+        WRPC=WRP
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+5, v['start']+5+WRP-1)
+      end
+      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." data", v['start']+5+WRPC, v['end'])
+      
     end
     print(#segs.." Segments mapped")
   else
@@ -782,7 +946,7 @@ end
 ---
 -- map a map
 function mapTag(tagMap)
-  tagMap.mappings={}
+  tagMap=makeTagMap()
   tagMap=mapTokenData(tagMap, 'Tag-ID', 1, 4)
   tagMap=mapTokenData(tagMap, 'Tag-CRC', 5, 5)
   tagMap=mapTokenData(tagMap, 'DCF', 6, 7)
@@ -1271,7 +1435,7 @@ function regenSegmentHeader(segment)
   -- len  bit0..7 | len=12bit=low nibble of byte1..byte0
   raw[1]=("%02x"):format(bbit("0x"..("%03x"):format(seg.len),0,8))
   -- high nibble of len  bit6=valid , bit7=last of byte 1 | ?what are bit 5+6 for? maybe kgh?
-  raw[2]=("%02x"):format(bbit("0x"..("%03x"):format(seg.len),4.4)..bbit("0x"..("%02x"):format((seg.valid*64)+(seg.last*128)),0,8))
+  raw[2]=("%02x"):format(bbit("0x"..("%03x"):format(seg.len),8,4)+bbit("0x"..("%02x"):format((seg.valid*64)+(seg.last*128)),0,8))
   -- WRP
   raw[3]=("%02x"):format(bbit("0x"..("%02x"):format(seg.WRP),0,8))
   -- WRC + RD
@@ -1895,7 +2059,8 @@ function modifyMode()
     ---
     -- load file into mainTAG
     ["lf"] = function(x)  
-              if (file_check(x)) then filename=x
+              
+              if (type(x)=='string' and file_check(x)) then filename=x
               else  filename=input("enter filename: ", "legic.temp") end
               inTAG=readFile(filename)
               -- check for existing tagMap
@@ -1960,13 +2125,8 @@ function modifyMode()
     ["mm"] = function(x) 
                 -- clear existing tagMap and init
                 if (istable(inTAG)) then 
-                  tagMap={}
-                  if (#tagMap==0) then 
-                    tagMap['name']=input(accyan.."enter Name for this Map: "..acoff , "newTagMap") 
-                    tagMap['mappings']={}
-                  end
-                  print(accyan.."new tagMap created"..acoff)                  
-                end 
+                  tagMap=makeTagMap()
+                end
               end,
     ---
     -- add map to tagMap
