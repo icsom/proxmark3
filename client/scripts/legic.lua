@@ -146,7 +146,9 @@ local acoff  = ""
 local acgreen= ""
 local accyan = ""
 local acred  = ""
-local yellow = ""
+local acyellow = ""
+local acblue = ""
+local acmagenta = ""
 
 --- Helper ---
 ---
@@ -158,6 +160,8 @@ function load_colors(onoff)
     accyan  = ansicolors.cyan
     acred   = ansicolors.red
     acyellow= ansicolors.yellow
+    acblue  = ansicolors.blue
+    acmagenta= ansicolors.magenta
     acoff   = ansicolors.reset
   else
     -- 'no color' 
@@ -165,6 +169,8 @@ function load_colors(onoff)
     accyan  = ""
     acred   = ""
     acyellow= ""
+    acblue  = ""
+    acmagenta= ""
     acoff   = ""
   end
 end
@@ -448,7 +454,6 @@ function tagToBytes(tag)
     for i=#bytes+1, 1024 do
       table.insert(bytes, i, '00')
     end
-    print(#bytes.." bytes of Tag dumped")
     return bytes
   end
   return oops("tag is no table in tagToBytes ("..type(tag)..")")
@@ -640,16 +645,12 @@ function saveTagMap(map, filename)
     if (istable(v)) then
       for k2, v2 in pairs(v) do
         if (k=='mappings') then
-          fho:write(k..","..k2..","..v2['name']..","..v2['start']..","..v2['end'].."\n")
+          fho:write(k..","..k2..","..v2['name']..","..v2['start']..","..v2['end']..","..((v2['highlight']) and "1" or "0").."\n")
         elseif (k=="crc8") then
             local tmp=""
             tmp=k..","..k2..","..v2['name']..","..v2['pos']..","
-            if (istable(v2['seq'])) then
-              for sk, sv in pairs(v2['seq']) do
-                tmp=tmp..sv..((sk%2==0) and "," or "-")
-              end
-            end
-            fho:write(string.sub(tmp, 1, string.len(tmp)-1).."\n")
+            tmp=tmp..tbl2seqstr(v2['seq'])
+            fho:write(tmp.."\n")
         end
       end
     else
@@ -661,6 +662,46 @@ function saveTagMap(map, filename)
 end
 
 ---
+-- toggle higligh
+function toggleHighlight(tbl)
+  if (tbl['highlight']) then tbl['highlight']=false
+  else tbl['highlight']=true end
+  return tbl
+end
+
+---
+-- return table od seqence-string
+function seqstr2tbl(seqstr)
+  local s=split(seqstr)
+  local res={}
+  if (#s>=1) then
+    for sk, sv in pairs(s) do
+      s2=split(sv, '-')
+      if(#s2==2) then
+        table.insert(res, s2[1])
+        table.insert(res, s2[2])
+      end
+    end
+  end
+  return res
+end
+
+---
+-- return sequence-string from table
+function tbl2seqstr(seqtbl)
+  local res=""
+  if (istable(seqtbl)) then
+    for sk, sv in pairs(seqtbl) do
+      res=res..sv..((sk%2==0) and "," or "-")
+    end
+    if (string.sub(res, string.len(res))==",") then
+      res=string.sub(res, 1, string.len(res)-1)
+    end
+  end
+  return res
+end
+
+---
 -- read map-file into map
 function loadTagMap(filename)
   local map={mappings={}, crc8={}, crc16={}}
@@ -668,6 +709,7 @@ function loadTagMap(filename)
   local c=0
   local line, fields
   local temp={}
+  local offset=0
 	if (file_check(filename)==false) then
 		return oops("input file: "..filename.." not found")
 	else
@@ -680,6 +722,9 @@ function loadTagMap(filename)
         fields=split(line)
       end
   		if (#fields==2) then 
+        if (fields[1]=='offset') then
+          offset=tonumber(fields[2],10)
+        end
         -- map-name
         map[fields[1]]=fields[2] 
       elseif (fields[1]=='mappings') then
@@ -688,26 +733,26 @@ function loadTagMap(filename)
         -- mapping
         temp['name']=fields[3]
         temp['start']=tonumber(fields[4], 10)
-        temp['end']=tonumber(fields[5],10)
+        temp['end']=tonumber(fields[5], 10)
+        if(temp['start']>22) then 
+          temp['start']=temp['start']+offset 
+          temp['end']=temp['end']+offset 
+        end
+        if (tonumber(fields[6], 10)==1) then temp['highlight']= true
+        else temp['highlight']= false end
         table.insert(map['mappings'], m, temp)
       elseif (fields[1]=='crc8') then
         c=c+1
         temp={}
         -- crc8
         temp['name']=fields[3]
-        temp['pos']=tonumber(fields[4], 10)
-        local s=split(string.sub(line, string.len(fields[1]..","..fields[2]..","..fields[3]..",")+1, string.len(line)))
-        if (#s>=2) then
-          temp['seq']={}
-          for sk, sv in pairs(s) do
-            s2=split(sv, '-')
-            if(#s2==2) then
-              table.insert(temp['seq'], s2[1])
-              table.insert(temp['seq'], s2[2])
-            end
-          end
-          print(temp.name.." temp.seq: "..#temp.seq)
-        end
+        temp['pos']=tonumber(fields[4], 10)+offset
+        local s=string.sub(line, string.len(fields[1]..","..fields[2]..","..fields[3]..",")+1, string.len(line))
+        temp['seq']=seqstr2tbl(s)
+        for k, v in pairs(temp['seq']) do
+          if(tonumber(v, 10)>22) then v=tonumber(v, 10)+offset end
+          temp['seq'][k]=tonumber(v, 10) 
+        end  
         table.insert(map.crc8, temp)
       end
   	end
@@ -735,7 +780,7 @@ function dumpTagMap(tag, tagMap)
           io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acred..v['name']..acoff..":")
         end
       else
-        io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..acyellow..v['name']..acoff..":")
+        io.write("("..("%04d"):format(v['start']).."-"..("%04d"):format(v['end'])..") "..((v['highlight']) and acmagenta or acyellow)..v['name']..acoff..":")
       end
       temp=""
       for i=((string.len(v['name']))/10), 2 do
@@ -747,14 +792,6 @@ function dumpTagMap(tag, tagMap)
       print(temp)
       lastend=v['end']
     end
-    --  end display-mappings
-    --[[
-    if (#tagMap.crc8>0) then
-      for i=1, #tagMap.crc8 do
-        print("crc8 "..i.." => "..((checkMapCrc8(tagMap, bytes, i)) and "valid" or "error"))
-      end
-    end
-      ]]--
   end
 end
 
@@ -769,37 +806,26 @@ function isPosCrc8(tagMap, pos)
   end
   return res
 end
+
 ---
 -- check mapped crc
 function checkMapCrc8(tagMap, bytes, n)
   local res=false
   if (#tagMap.crc8>0) then
-      if(istable(tagMap.crc8[n])) then
-        temp=""
-        for k2, v2 in pairs(tagMap.crc8[n]) do
-          if (istable(v2)) then
-            for x, v3 in pairs(v2) do
-              temp=temp..v3..((x%2==0) and "," or "-")
-            end
-          end
+    if(istable(tagMap.crc8[n])) then
+      temp=""     
+      for k2, v2 in pairs(tagMap.crc8[n]) do
+        if (istable(v2)) then
+            temp=temp..tbl2seqstr(v2)
         end
-        local seq=split(temp, ",")
-        local tempres=""
-        if(#seq>0) then
-          for ck, cv in pairs(seq) do
-            local cb=split(cv, '-')
-            for i=cb[1], cb[2] do
-              tempres=tempres..bytes[i]
-            end
-          end
-          --print(string.sub(temp,1,string.len(temp)-1).." => "..tempres)
-          tempres=("%02x"):format(utils.Crc8Legic(tempres))
-          if (bytes[tagMap.crc8[n]['pos']]==tempres) then
-            res=true
-          end
-        end
-        --print(bytes[tagMap.crc8[n]['pos']].." => "..tempres)
-      end
+      end     
+      local tempres=""
+      local tempres=getSequences(bytes, temp)
+      tempres=("%02x"):format(utils.Crc8Legic(tempres))
+      if (bytes[tagMap.crc8[n]['pos']]==tempres) then
+        res=true
+      end    
+    end
   end
   return res
 end
@@ -808,21 +834,21 @@ end
 -- edit existing Map
 function editTagMap(tag, tagMap)
   local t = [[
-  
-'em' sub-Menu
-d = dump    a = add   r = remove     mas = map all segments
-e = edit    t = cmd   c = crc         dm = dump mapped bytes
-                    q = exit sub-Menu
+    Data:  dm = show         dr = dump raw      
+Mappings:  im = insert       am = add       rm = remove
+    CRC8: ac8 = add         sc8 = show     rc8 = remove                    
+        :   q = exit          h = Help
   ]]
   --if(#tagMap.mappings==0) then oops("no mappings in tagMap"); return tagMap end
-  print("tagMap edit-mode")
+  print("tagMap edit-mode submenu")
   repeat 
-    x=input(t, 'q')
-      if      (x=='d') then tagMmap=dumpTagMap(tag, tagMap)
-      elseif  (x=='dm') then tagMmap=dumpMap(tag, tagMap)
-      elseif  (x=='c') then 
+    x=input('tagMap submenu:', 'h')
+      if      (x=='h') then print(t)
+      elseif  (x=='dm') then tagMmap=dumpTagMap(tag, tagMap)
+      elseif  (x=='dr') then tagMmap=dumpMap(tag, tagMap)
+      elseif  (x=='rc8') then 
         if (istable(tagMap.crc8)) then
-          local x1 = selectTableEntry(tagMap.crc8)
+          local x1 = selectTableEntry(tagMap.crc8, "select number of CRC8 to remove:")
           if (istable(tagMap.crc8[x1])) then
             table.remove(tagMap.crc8, x1)
           end
@@ -830,7 +856,7 @@ e = edit    t = cmd   c = crc         dm = dump mapped bytes
       elseif  (x=='ac8') then
         local p=tonumber(input("enter byte-addr of crc8", '0'),10)
         if (p>0) then
-          local i1=input("enter comma-seperated byte-sequences (e.g.: '1-4,23-26')")
+          local i1=input("enter comma-seperated byte-sequences (e.g.: '1-4,23-26')", '1-4,23-26')
           local s1=split(i1, ',')
           if (#s1>0) then
             local temp={seq={}}
@@ -846,8 +872,34 @@ e = edit    t = cmd   c = crc         dm = dump mapped bytes
             table.insert(tagMap.crc8, temp)
           end
         end
-      elseif  (x=='a') then tagMap=addMapping(tag, tagMap)
-      elseif  (x=='r') then tagMap=deleteMapping(tag, tagMap)
+      elseif  (string.sub(x, 1, 3)=='sc8') then 
+        local bytes=tagToBytes(tag)
+        local res, pos
+        -- trigger manually by sc8 <'4digit' checkadd> <'seqeuence-string'>
+        -- e.g.: sc8 0027 1-4,23-36
+        if (string.len(x)>=9) then 
+          pos=tonumber(string.sub(x, 5, 8), 10)
+          x=string.sub(x, 9, string.len(x)) 
+          print("x: "..x.."  - pos:"..pos)
+        else
+          x=selectTableEntry(tagMap.crc8, "select CRC:")
+          if(istable(tagMap.crc8[x])) then
+            pos=tagMap.crc8[x]['pos']
+            x=tbl2seqstr(tagMap.crc8[x]['seq'])
+          end
+        end
+        if (type(x)=='string') then
+          res=("%02x"):format(utils.Crc8Legic(getSequences(bytes, x)))
+          print(accyan.."Sequence:\t"..acoff..x)
+          print(accyan.."Bytes:\t\t"..acoff..getSequences(bytes, x))
+          print(accyan.."calculated: "..acoff..res..accyan.." bytes["..pos.."]: "..acoff..bytes[pos].." ("..compareCrc(utils.Crc8Legic(getSequences(bytes, x)), bytes[pos])..")")
+        end
+      elseif (x=="tm") then
+          x=selectTableEntry(tagMap.mappings, "select number of Mapping:")
+          tagMap.mappings[x]=toggleHighlight(tagMap.mappings[x])
+      elseif  (x=='am') then tagMap=addMapping(tag, tagMap)
+      elseif  (x=='im') then tagMap=addMapping(tag, tagMap, selectTableEntry(tagMap.mappings, "select List-Position for insert:"))
+      elseif  (x=='rm') then tagMap=deleteMapping(tag, tagMap)
       elseif  (x=='mas') then tagMap=mapTag(tagMap); tagMap=mapAllSegments(tag, tagMap)
       elseif  (type(actions[string.sub(x, 3)])=='function') then actions[string.sub(x, 3)]()
       end
@@ -862,10 +914,11 @@ function dumpMap(tag, tagMap)
   local dstart=1
   local dend, cnt
   local bytes = tagToBytes(tag)
-  dend=tagMap.mappings[#tagMap.mappings]['end']
-    
+  local stats = getSegmentStats(bytes)
+  dend=stats[#stats]['end']
+  print(accyan.."Tag uses "..dend.." bytes:"..acoff)
   for i=dstart, dend do
-    if (check4MappedByte(i, tagMap) and not check4MapCrc8(i, tagMap)) then io.write(""..acyellow)
+    if (check4MappedByte(i, tagMap) and not check4MapCrc8(i, tagMap) and not check4Highlight(i, tagMap)) then io.write(""..acyellow)
     elseif (check4MapCrc8(i, tagMap)) then 
       if ( checkMapCrc8(tagMap, bytes, isPosCrc8(tagMap, i) ) ) then
         io.write(""..acgreen)
@@ -875,12 +928,37 @@ function dumpMap(tag, tagMap)
     else 
       io.write(""..acoff) 
     end
+    -- highlighted mapping
+    if (check4Highlight(i, tagMap)) then io.write(""..acmagenta) end
+    
     io.write(bytes[i])
     if (i%8==0) then io.write("\n") 
       else io.write(" ") end
   end
   
   io.write("\n"..acoff)
+end
+
+---
+-- show bytes used for crc-calculation
+function getSequences(bytes, seqstr)
+  if (type(seqstr)~="string") then seqstr=input("enter comma-seperated sequences (e.g.: '1-4,23-26')", '1-4,23-26') end
+  local seqs=split(seqstr, ',')
+  local res = ""
+  if(#seqs>0) then
+    for k, v in pairs(seqs) do
+      local seq = split(v,'-')
+      if (#seq>=2) then
+        for i=seq[1], seq[2] do
+          res=res..bytes[i].." "
+        end
+      end
+      if(string.len(res)>0) then res=res.."  " end
+    end
+  else
+    oops("no sequence found in '"..seqstr.."'")
+  end
+  return res
 end
 
 ---
@@ -900,7 +978,7 @@ end
 function check4MapCrc16(addr, tagMap)
   local res=false
   for i=1, #tagMap.crc16 do
-    if (addr == tagMap.crc8[i]['pos']) then
+    if (addr == tagMap.crc16[i]['pos']) then
       res=true
     end
   end
@@ -920,14 +998,28 @@ function check4MappedByte(addr, tagMap)
 end
 
 ---
+-- check if byte is highlighted or not
+function check4Highlight(addr, tagMap)
+  local res=false
+  for _, v in pairs(tagMap.mappings) do
+    if (addr >= v['start'] and addr <= v['end'] ) then
+      res= v['highlight']
+    end
+  end
+  return res
+end
+
+---
 -- add interactive mapping
-function addMapping(tag, tagMap)
+function addMapping(tag, tagMap, x)
+  if (type(x)~="number") then x=#tagMap.mappings+1 end 
   local bytes=tagToBytes(tag)
   local myMapping={}
   myMapping['name'] =input(accyan.."enter Maping-Name:"..acoff, string.format("mapping %d", #tagMap.mappings+1))
   myMapping['start']=tonumber(input(accyan.."enter start-addr:"..acoff, '1'), 10)
   myMapping['end']  =tonumber(input(accyan.."enter end-addr:"..acoff, #bytes), 10)
-  table.insert(tagMap.mappings, myMapping)  
+  myMapping['highlight']=confirm("set highlighted")
+  table.insert(tagMap.mappings, x, myMapping)  
   return tagMap
 end
 
@@ -935,24 +1027,23 @@ end
 -- delete mapping
 function deleteMapping(tag, tagMap)
   if(#tagMap.mappings>0) then
-    local d = selectTableEntry(tagMap.mappings)
+    local d = selectTableEntry(tagMap.mappings, "select number of Mapping to remove:")
     if (type(d)=='number') then
       table.remove(tagMap.mappings, d)
     else oops("deleteMapping: got type = "..type(d).." - expected type = 'number'")
     end
   end
-  --if(#tagMap.functions>0) then
-  
   return tagMap 
 end
 
 ---
 -- select a mapping from a tagmap
-function selectTableEntry(table)
+function selectTableEntry(table, action)
+  if (type(action)~="string") then action="select number of item:" end
   for k, v in pairs(table) do
     print(accyan..k..acoff.."\t-> "..accyan..v['name']..acoff)
   end
-  local res = tonumber(input("enter number of mapping to remove:", 0), 10)
+  local res = tonumber(input(action , 0), 10)
   if (istable(table[res])) then
     return  res
   else
@@ -973,20 +1064,20 @@ function mapAllSegments(tag, tagMap)
   	  -- wrc (write control) - bit 4-6 of byte 3
   	  WRC = tonumber(bbit("0x"..bytes[v['start']+3],4,3),16)
       --tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." HDR", v['start'], v['start']+3)
-      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." CRC", v['start']+4, v['start']+4)
+      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." CRC", v['start']+4, v['start']+4, true)
       table.insert(tagMap.crc8, {name = 'Segment '..("%02d"):format(v['index']).." CRC", pos=v['start']+4, seq={1,4,v['start'],v['start']+3}} )
       if(WRC>WRP) then 
         WRPC=WRC
-        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1)
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1, true)
       elseif (WRP>WRC and WRC>0) then
         WRPC=WRP
-        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1)
-        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+WRC+5, v['start']+5+WRP-1)
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRC", v['start']+5, v['start']+5+WRC-1, true)
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+WRC+5, v['start']+5+WRP-1, true)
       else
         WRPC=WRP
-        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+5, v['start']+5+WRP-1)
+        tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." WRP", v['start']+5, v['start']+5+WRP-1, true)
       end
-      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." data", v['start']+5+WRPC, v['end'])
+      tagMap=mapTokenData(tagMap, 'Segment '..("%02d"):format(v['index']).." data", v['start']+5+WRPC, v['end'], false)
       
     end
     print(#segs.." Segments mapped")
@@ -998,11 +1089,13 @@ end
 
 --- 
 -- map all token data
-function mapTokenData(tagMap, mname, mstart, mend)
+function mapTokenData(tagMap, mname, mstart, mend, mhigh)
+  --if ( not mhigh ) then mhigh=false end
   local myMapping={}
   myMapping['name'] =mname
   myMapping['start']=mstart
   myMapping['end']  =mend
+  myMapping['highlight']=mhigh
   table.insert(tagMap.mappings, myMapping) 
   return tagMap
 end
@@ -1011,15 +1104,15 @@ end
 -- map a map
 function mapTag(tagMap)
   tagMap=makeTagMap()
-  tagMap=mapTokenData(tagMap, 'Tag-ID', 1, 4)
-  --tagMap=mapTokenData(tagMap, 'Tag-CRC', 5, 5)
-  tagMap=mapTokenData(tagMap, 'DCF', 6, 7)
-  tagMap=mapTokenData(tagMap, 'THDR-Raw/Stamp-Len', 8, 8)
-  tagMap=mapTokenData(tagMap, 'SSC', 9, 9)
-  tagMap=mapTokenData(tagMap, 'Header', 10, 13)
-  tagMap=mapTokenData(tagMap, 'Backup', 14, 19)
-  --tagMap=mapTokenData(tagMap, 'Bck-CRC', 20, 20)
-  tagMap=mapTokenData(tagMap, 'TokenTime', 21, 22)
+  tagMap=mapTokenData(tagMap, 'Tag-ID', 1, 4, true)
+  tagMap=mapTokenData(tagMap, 'Tag-CRC', 5, 5, false)
+  tagMap=mapTokenData(tagMap, 'DCF', 6, 7, true)
+  tagMap=mapTokenData(tagMap, 'THDR-Raw/Stamp-Len', 8, 8, true)
+  tagMap=mapTokenData(tagMap, 'SSC', 9, 9, true)
+  tagMap=mapTokenData(tagMap, 'Header', 10, 13, false)
+  tagMap=mapTokenData(tagMap, 'Backup', 14, 19, true)
+  tagMap=mapTokenData(tagMap, 'Bck-CRC', 20, 20, false)
+  tagMap=mapTokenData(tagMap, 'TokenTime', 21, 22, false)
   return tagMap
 end
 
@@ -1476,7 +1569,7 @@ function getSegmentStats(bytes)
 	  sLast = bbit("0x"..bytes[sStart+1],7,1)
 	  -- len = (byte 0)+(bit0-3 of byte 1)
     sLen = tonumber(bbit("0x"..bytes[sStart+1],0,4)..bytes[sStart],16)
-    print("index: "..("%02d"):format(x).." Len: "..sLen.." start:"..sStart.." end: "..(sStart+sLen-1))
+    --print("index: "..("%02d"):format(x).." Len: "..sLen.." start:"..sStart.." end: "..(sStart+sLen-1))
     s['index']=x
     s['start']=sStart
     s['end']=sStart+sLen-1
@@ -2055,18 +2148,18 @@ function modifyHelp()
                                      ed => edit   Segment Data      tk => toggle KGH-Flag
          File I/O                    rs => remove Segment           
      -----------------               cc => check  Segment-CRC       
-     lf => load   File               ck => check  KGH                
+     lf => load   File               ck => check  KGH               
      sf => save   File               ds => dump   Segments          
      xf => xor to File                                              
+                                                                                                                                        
                                                                     
-                                                                    
-         Virtual Tags                     Script Output              (partial) known Segments 
- --------------------------------    ------------------------       ---------------------------
- ct => copy  mainTag to backupTag    tac => toggle ansicolors       dlc => dump  Legic-Cash    
- tc => copy  backupTag to mainTag                                   elc => edit  Legic-Cash    
- tt => switch mainTag & backupTag                                   d3p => dump  3rd-Party-Cash
- di => dump  mainTag                                                e3p => edit  3rd-Party-Cash
- do => dump  backupTag
+         Virtual Tags                       tagMap                   (partial) known Segments 
+ --------------------------------    ---------------------          ---------------------------
+ ct => copy  mainTag to backupTag    mm => make (new) Map           dlc => dump  Legic-Cash    
+ tc => copy  backupTag to mainTag    em => edit Map submenu         elc => edit  Legic-Cash    
+ tt => switch mainTag & backupTag    lm => load map from file       d3p => dump  3rd-Party-Cash
+ di => dump  mainTag                 sm => save map to file         e3p => edit  3rd-Party-Cash
+ do => dump  backupTag                      
                            
                             h => this help                q => quit
   ]]                      
@@ -2194,17 +2287,6 @@ function modifyMode()
                 end
               end,
     ---
-    -- add map to tagMap
-    ["am"] = function(x) 
-                if (istable(inTAG) and istable(tagMap)) then 
-                  print("add mapping "..(#tagMap.mappings+1))
-                  tagMap=addMapping(inTAG, tagMap)
-                else
-                  oops("eigther there is no mainTAG or no tagMap!\n load a file (lf) or read a Tag (rt) and make (mm) or load (lm) a tagMap")
-                end 
-                
-              end,
-    ---
     -- edit a tagMap
     ["em"] = function(x) 
                 if (istable(inTAG)==false) then 
@@ -2218,18 +2300,6 @@ function modifyMode()
                 if (istable(tagMap)==false) then actions['mm']() end                
                 -- edit
                 tagMap=editTagMap(inTAG, tagMap)
-              end,
-    ---
-    -- dump a tagMap
-    ["dm"] = function(x) 
-                if (istable(tagMap)) then
-                  if (istable(tagMap) and #tagMap.mappings>0) then
-                    print(accyan.."Map "..acoff..tagMap.name..accyan.." contains "..acoff..#tagMap.mappings..accyan.." mappings"..acoff)
-                    dumpTagMap(inTAG, tagMap)
-                  else 
-                    print(acyellow.."no mappings in tagMap!"..acoff)
-                  end
-                end 
               end,
     ---
     -- save a tagMap
