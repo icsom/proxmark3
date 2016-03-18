@@ -2405,7 +2405,7 @@ function modifyMode()
     ---
     -- noop
     ["xb"] = function(x)
-              end,
+          end,
     ---
     -- print string for LegicCrc8-calculation about single segment 
     ["xc"] = function(x) 
